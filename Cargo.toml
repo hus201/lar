@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+members = ["crates/lar"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Linux Application Runtime — side-by-side packages and resolved application runtimes"
+repository = "https://github.com/lar-linux/lar"
+rust-version = "1.80"
+
+[workspace.dependencies]
+clap = { version = "4.5", features = ["derive"] }
