@@ -24,7 +24,7 @@ cargo run -p lar -- resolve
 cargo run -p lar -- config
 ```
 
-See [docs/package-format.md](docs/package-format.md) for the `package.toml` and `.lar` format, [docs/sxs-store.md](docs/sxs-store.md) for the local package store, and [docs/resolve-lockfile.md](docs/resolve-lockfile.md) for dependency resolution.
+See [docs/](docs/) for the documentation index: [proposal](docs/proposal.md), [design](docs/design/), and [implementation](docs/implementation/) (package format, SxS store, resolve/lockfile).
 
 Other commands are defined but not implemented yet.
 

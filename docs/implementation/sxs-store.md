@@ -86,4 +86,4 @@ lar config --json
 
 - Package format: [package-format.md](package-format.md)
 - Resolve / lockfile: [resolve-lockfile.md](resolve-lockfile.md)
-- Design: SxS Package Store in [design-specification.md](design-specification.md)
+- Design: [SxS Package Store](../design/architecture.md#sxs-package-store)

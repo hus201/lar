@@ -158,3 +158,9 @@ lar package inspect [--json] <package.lar>
 Default pack output name: `{id}-{version}.lar`.
 
 `lar package inspect` reads a `.lar`, verifies payload digests, and prints package metadata (or JSON with `--json`).
+
+## Related
+
+- Design: [Package model](../design/packages.md)
+- SxS store: [sxs-store.md](sxs-store.md)
+- Resolve / lockfile: [resolve-lockfile.md](resolve-lockfile.md)
