@@ -90,14 +90,18 @@ Provides:
 
 # 5. Package Model
 
-Everything managed by LAR is a package.
+Everything managed by LAR is a package. There is a single package kind.
 
-Package types:
+Packages differ by **capabilities** declared in the manifest (dependencies, entry binaries, desktop metadata, payload layout), not by a required type or role enum.
 
-- Application
-- Library
-- Runtime Component
-- Resource
+Examples of what a package may contain:
+
+- User-facing applications (entry binaries, optional desktop metadata).
+- Shared libraries.
+- Language runtimes and execution stacks.
+- Resources (icons, locales, assets).
+
+Optional `role` / `type` / tags are deferred unless a concrete long-term system need appears (for example install UX policy that cannot be inferred from `[entry]` / `[desktop]`).
 
 Packages are:
 

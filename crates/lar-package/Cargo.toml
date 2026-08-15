@@ -1,0 +1,21 @@
+[package]
+name = "lar-package"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "LAR package manifest and .lar archive format"
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+blake3.workspace = true
+semver.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+tar.workspace = true
+thiserror.workspace = true
+toml.workspace = true
+zstd.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

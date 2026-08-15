@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -80,26 +80,6 @@ pub enum Commands {
     },
 }
 
-#[derive(Debug, Clone, Copy, ValueEnum)]
-pub enum PackageTypeArg {
-    Application,
-    Library,
-    Runtime,
-    Resource,
-}
-
-impl std::fmt::Display for PackageTypeArg {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let name = match self {
-            Self::Application => "application",
-            Self::Library => "library",
-            Self::Runtime => "runtime",
-            Self::Resource => "resource",
-        };
-        f.write_str(name)
-    }
-}
-
 #[derive(Debug, Subcommand)]
 pub enum PackageCmd {
     /// Write a package.toml template
@@ -107,15 +87,12 @@ pub enum PackageCmd {
         /// Directory to create the package in (default: current directory)
         #[arg(default_value = ".")]
         dir: PathBuf,
-        /// Reverse-DNS package id
+        /// Reverse-DNS package id (required)
         #[arg(long)]
-        id: Option<String>,
+        id: String,
         /// Human-readable name
         #[arg(long)]
         name: Option<String>,
-        /// Package type
-        #[arg(long, value_enum, default_value_t = PackageTypeArg::Application)]
-        r#type: PackageTypeArg,
         /// Semver version
         #[arg(long, default_value = "0.1.0")]
         version: String,
@@ -137,6 +114,14 @@ pub enum PackageCmd {
         /// Output .lar path
         #[arg(short, long)]
         output: Option<PathBuf>,
+    },
+    /// Inspect a .lar archive and verify payload digests
+    Inspect {
+        /// Path to a .lar archive
+        package: PathBuf,
+        /// Emit JSON instead of text
+        #[arg(long)]
+        json: bool,
     },
 }
 

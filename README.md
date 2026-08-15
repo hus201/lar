@@ -10,7 +10,18 @@ Applications remain native ELF processes. LAR does not introduce a new ABI, a cu
 cargo run -p lar -- --help
 ```
 
-Commands are defined but not implemented yet.
+Package commands:
+
+```bash
+cargo run -p lar -- package init --id org.example.editor --name "Example Editor"
+cargo run -p lar -- package validate
+cargo run -p lar -- package pack
+cargo run -p lar -- package inspect org.example.editor-0.1.0.lar
+```
+
+See [docs/package-format.md](docs/package-format.md) for the `package.toml` and `.lar` format.
+
+Other commands are defined but not implemented yet.
 
 ## Build
 

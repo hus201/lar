@@ -158,54 +158,35 @@ Responsibilities:
 
 Everything managed by LAR is represented as a package.
 
-Package categories:
+LAR uses a **single package kind**. There is no required package `type` or `role` field.
 
-## Application Package
+A package is defined by:
 
-Represents user-facing software.
+- Identity and version.
+- Optional dependencies.
+- Optional entry binaries (one or many).
+- Optional desktop integration metadata.
+- An immutable payload (`files/`).
 
-Examples:
+Capabilities are inferred from what the manifest declares. For example:
 
-- Firefox.
-- Blender.
-- LibreOffice.
+- Presence of `[entry]` / `[desktop]` supports launch and desktop install flows.
+- Absence of entry still allows the package to be stored and composed into another application's runtime as a dependency.
 
----
+Illustrative contents (not separate formal types):
 
-## Library Package
+- Applications such as Firefox, Blender, or LibreOffice.
+- Libraries such as Qt, GTK, FFmpeg, or OpenSSL.
+- Execution stacks such as language runtimes (Python, Node.js, JVM distributions).
+- Resources such as icons, localization files, or assets.
 
-Provides reusable libraries.
+Terminology note:
 
-Examples:
+- A **package** is an immutable artifact in the SxS store.
+- The **runtime resolver** selects packages and builds environments.
+- A **runtime environment** is a disposable composed filesystem for execution.
 
-- Qt.
-- GTK.
-- FFmpeg.
-- OpenSSL.
-
----
-
-## Runtime Component Package
-
-Provides execution components.
-
-Examples:
-
-- Language runtimes.
-- Frameworks.
-- Supporting services.
-
----
-
-## Resource Package
-
-Provides shared resources.
-
-Examples:
-
-- Icons.
-- Localization files.
-- Assets.
+Do not add a type/role enum unless a long-term system blocker requires it (policy that cannot be expressed via entry, desktop metadata, dependencies, or payload conventions).
 
 ---
 
@@ -215,7 +196,6 @@ Every package must have:
 
 - Unique identifier.
 - Version.
-- Type.
 - Metadata.
 - Integrity information.
 
@@ -229,10 +209,6 @@ Version:
 
 6.8.1
 
-Type:
-
-Library
-
 ---
 
 # 6. Application Manifest
@@ -241,16 +217,16 @@ Applications define their requirements through a manifest.
 
 The manifest describes:
 
-- Application identity.
+- Package identity.
 - Version.
-- Package type.
 - Dependencies.
-- Runtime requirements.
-- Desktop integration metadata.
+- Optional entry binaries.
+- Optional desktop integration metadata.
+- Runtime requirements as needed.
 
 Example information:
 
-Application:
+Package:
 
 org.example.editor
 
