@@ -769,10 +769,90 @@ fn resolve_fails_when_dependency_missing() {
     assert!(!resolve.status.success());
     let stderr = String::from_utf8_lossy(&resolve.stderr);
     assert!(
-        stderr.contains("not found in store") || stderr.contains("org.example.lib"),
+        stderr.contains("not found in store")
+            || stderr.contains("matches requirement")
+            || stderr.contains("org.example.lib"),
         "{stderr}"
     );
     assert!(!app.join("lar.lock").exists());
+}
+
+#[test]
+fn resolve_version_range_picks_highest() {
+    let dir = tempdir().unwrap();
+    let prefix = dir.path().join("prefix");
+
+    for version in ["1.0.0", "1.3.0", "2.0.0"] {
+        let lib = dir.path().join(format!("lib-{version}"));
+        assert!(lar()
+            .args([
+                "package",
+                "init",
+                "--id",
+                "org.example.lib",
+                "--name",
+                "Lib",
+                "--version",
+                version,
+            ])
+            .arg(&lib)
+            .output()
+            .unwrap()
+            .status
+            .success());
+        fs::write(lib.join("files/lib.txt"), version.as_bytes()).unwrap();
+        assert!(lar()
+            .args(["package", "pack"])
+            .arg(&lib)
+            .output()
+            .unwrap()
+            .status
+            .success());
+        assert!(lar()
+            .env("LAR_USER_PREFIX", &prefix)
+            .args(["store", "add"])
+            .arg(lib.join(format!("org.example.lib-{version}.lar")))
+            .output()
+            .unwrap()
+            .status
+            .success());
+    }
+
+    let app = dir.path().join("app");
+    assert!(lar()
+        .args([
+            "package",
+            "init",
+            "--id",
+            "org.example.app",
+            "--name",
+            "App",
+        ])
+        .arg(&app)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    let mut manifest = fs::read_to_string(app.join("package.toml")).unwrap();
+    manifest.push_str("\n[dependencies]\n\"org.example.lib\" = \"^1.0\"\n");
+    fs::write(app.join("package.toml"), manifest).unwrap();
+
+    let resolve = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["resolve"])
+        .arg(&app)
+        .output()
+        .unwrap();
+    assert!(
+        resolve.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&resolve.stderr)
+    );
+    let lock = fs::read_to_string(app.join("lar.lock")).unwrap();
+    assert!(
+        lock.contains("id = \"org.example.lib\"") && lock.contains("version = \"1.3.0\""),
+        "{lock}"
+    );
 }
 
 #[test]
@@ -1256,7 +1336,10 @@ summary = "Yanked after ship"
         .unwrap();
     assert!(!resolve_yanked.status.success());
     let err = String::from_utf8_lossy(&resolve_yanked.stderr);
-    assert!(err.contains("yanked"), "{err}");
+    assert!(
+        err.contains("yanked") || err.contains("matches requirement"),
+        "{err}"
+    );
 }
 
 #[test]

@@ -8,8 +8,11 @@ pub enum Error {
     #[error("package not found in store: {id} {version}")]
     Missing { id: String, version: String },
 
+    #[error("no version of {id} matches requirement `{req}`")]
+    Unsatisfiable { id: String, req: String },
+
     #[error(
-        "dependency conflict for {id}: required {required} but already resolved as {resolved}"
+        "dependency conflict for {id}: requirement `{required}` is not satisfied by already resolved {resolved}"
     )]
     Conflict {
         id: String,

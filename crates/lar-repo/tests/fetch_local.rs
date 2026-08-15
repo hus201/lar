@@ -6,8 +6,8 @@ use std::thread;
 
 use lar_package::{init_package, pack, InitOptions};
 use lar_repo::{
-    add_source, audit, audit_should_fail, build_index, fetch_into_store, keygen, trust_add,
-    write_index, AuditScope, LookupMode, SourcePolicy,
+    add_source, audit, audit_should_fail, build_index, fetch_into_store, keygen, list_dep_versions,
+    trust_add, write_index, AuditScope, LookupMode, SourcePolicy,
 };
 use lar_store::{Paths, Store};
 use tempfile::tempdir;
@@ -425,6 +425,59 @@ fn http_fetch_works() {
     )
     .unwrap();
     assert_eq!(stored.version, "1.0.0");
+}
+
+#[test]
+fn list_dep_versions_skips_yanked_index_pins() {
+    let tmp = tempdir().unwrap();
+    let prefix = tmp.path().join("prefix");
+    let store = open_prefix(&prefix);
+
+    let (public, secret, _) = keygen().unwrap();
+    trust_add(&store, &public, "").unwrap();
+
+    let pkg_old = tmp.path().join("pkg-old");
+    let lar_old = pack_lib(&pkg_old, "org.example.lib", "1.0.0", b"old");
+    let pkg_new = tmp.path().join("pkg-new");
+    let lar_new = pack_lib(&pkg_new, "org.example.lib", "1.1.0", b"new");
+
+    let repo = tmp.path().join("repo");
+    fs::create_dir_all(repo.join("packages")).unwrap();
+    fs::copy(&lar_old, repo.join("packages/org.example.lib-1.0.0.lar")).unwrap();
+    fs::copy(&lar_new, repo.join("packages/org.example.lib-1.1.0.lar")).unwrap();
+    let index = build_index(&repo, &secret).unwrap();
+    write_index(&repo, &index).unwrap();
+    fs::write(
+        repo.join("advisories.toml"),
+        r#"
+format = 1
+
+[[advisories]]
+id = "LAR-YANK"
+package_id = "org.example.lib"
+versions = ["1.0.0"]
+severity = "high"
+yanked = true
+summary = "yanked"
+"#,
+    )
+    .unwrap();
+
+    add_source(
+        &store,
+        "main".into(),
+        repo.display().to_string(),
+        SourcePolicy::Deps,
+        true,
+    )
+    .unwrap();
+
+    let versions = list_dep_versions(&store, "org.example.lib").unwrap();
+    assert!(versions.contains(&"1.1.0".to_string()), "{versions:?}");
+    assert!(
+        !versions.contains(&"1.0.0".to_string()),
+        "yanked 1.0.0 should be excluded: {versions:?}"
+    );
 }
 
 fn serve_file(root: &Path, mut stream: std::net::TcpStream) -> std::io::Result<()> {

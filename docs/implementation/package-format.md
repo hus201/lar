@@ -8,7 +8,7 @@ LAR uses a **single package kind**. There is no required `type` or `role` field.
 
 A package is identified by reverse-DNS `id` and semver `version`. Capabilities come from optional manifest tables and the payload:
 
-- `[dependencies]` — exact version pins
+- `[dependencies]` — semver requirements (exact or ranges such as `^1.0`)
 - `[entry]` — one or more launchable binaries
 - `[desktop]` — desktop integration metadata (reserved for later use)
 - `files/` — immutable payload
@@ -75,7 +75,7 @@ Tooling built for format `1` rejects any other `format` value. Bump `format` onl
 
 ### `[dependencies]`
 
-Keys are package ids (reverse-DNS). Values are exact semver versions (no ranges in v1).
+Keys are package ids (reverse-DNS). Values are semver **requirements** (`1.2.3`, `^1.2`, `~1.2.3`, `>=1.0, <2`). Bare `*` is rejected. Resolve selects an exact version into `lar.lock`.
 
 ### `[entry]` (optional)
 

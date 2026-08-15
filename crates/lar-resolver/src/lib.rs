@@ -208,7 +208,10 @@ mod tests {
             &[("org.example.lib", "1.0.0")],
         );
         let err = resolve(&manifest, &store).unwrap_err();
-        assert!(matches!(err, Error::Missing { .. }));
+        assert!(
+            matches!(err, Error::Unsatisfiable { .. } | Error::Missing { .. }),
+            "{err}"
+        );
     }
 
     #[test]
@@ -270,5 +273,151 @@ mod tests {
         );
         let err = resolve(&manifest, &store).unwrap_err();
         assert!(matches!(err, Error::Cycle { .. }), "{err}");
+    }
+
+    #[test]
+    fn resolve_picks_highest_matching_range() {
+        let dir = tempdir().unwrap();
+        let store = Store::open(Paths::from_prefix(dir.path().join("prefix"), false));
+        add_pkg(&store, dir.path(), "org.example.lib", "1.0.0", &[]);
+        add_pkg(&store, dir.path(), "org.example.lib", "1.2.0", &[]);
+        add_pkg(&store, dir.path(), "org.example.lib", "2.0.0", &[]);
+        let manifest = write_root(
+            dir.path(),
+            "org.example.app",
+            "0.1.0",
+            &[("org.example.lib", "^1.0")],
+        );
+        let lock = resolve(&manifest, &store).unwrap();
+        let lib = lock
+            .packages
+            .iter()
+            .find(|p| p.id == "org.example.lib")
+            .unwrap();
+        assert_eq!(lib.version, "1.2.0");
+    }
+
+    #[test]
+    fn compatible_ranges_share_chosen_version() {
+        let dir = tempdir().unwrap();
+        let store = Store::open(Paths::from_prefix(dir.path().join("prefix"), false));
+        add_pkg(&store, dir.path(), "org.example.lib", "1.5.0", &[]);
+        add_pkg(
+            &store,
+            dir.path(),
+            "org.example.left",
+            "1.0.0",
+            &[("org.example.lib", "^1.0")],
+        );
+        add_pkg(
+            &store,
+            dir.path(),
+            "org.example.right",
+            "1.0.0",
+            &[("org.example.lib", "~1.5.0")],
+        );
+        let manifest = write_root(
+            dir.path(),
+            "org.example.app",
+            "0.1.0",
+            &[
+                ("org.example.left", "1.0.0"),
+                ("org.example.right", "1.0.0"),
+            ],
+        );
+        let lock = resolve(&manifest, &store).unwrap();
+        let lib = lock
+            .packages
+            .iter()
+            .find(|p| p.id == "org.example.lib")
+            .unwrap();
+        assert_eq!(lib.version, "1.5.0");
+    }
+
+    #[test]
+    fn incompatible_ranges_conflict() {
+        let dir = tempdir().unwrap();
+        let store = Store::open(Paths::from_prefix(dir.path().join("prefix"), false));
+        add_pkg(&store, dir.path(), "org.example.lib", "1.0.0", &[]);
+        add_pkg(&store, dir.path(), "org.example.lib", "2.0.0", &[]);
+        add_pkg(
+            &store,
+            dir.path(),
+            "org.example.left",
+            "1.0.0",
+            &[("org.example.lib", "^1.0")],
+        );
+        add_pkg(
+            &store,
+            dir.path(),
+            "org.example.right",
+            "1.0.0",
+            &[("org.example.lib", "^2.0")],
+        );
+        let manifest = write_root(
+            dir.path(),
+            "org.example.app",
+            "0.1.0",
+            &[
+                ("org.example.left", "1.0.0"),
+                ("org.example.right", "1.0.0"),
+            ],
+        );
+        let err = resolve(&manifest, &store).unwrap_err();
+        assert!(matches!(err, Error::Conflict { .. }), "{err}");
+    }
+
+    #[test]
+    fn range_fetches_highest_from_deps_source() {
+        use lar_repo::{add_source, build_index, keygen, trust_add, write_index, SourcePolicy};
+
+        let dir = tempdir().unwrap();
+        let store = Store::open(Paths::from_prefix(dir.path().join("prefix"), false));
+        let (public, secret, _) = keygen().unwrap();
+        trust_add(&store, &public, "").unwrap();
+
+        let repo = dir.path().join("repo");
+        fs::create_dir_all(repo.join("packages")).unwrap();
+        for version in ["1.0.0", "1.4.0"] {
+            let pkg = dir.path().join(format!("lib-{version}"));
+            init_package(
+                &pkg,
+                &InitOptions {
+                    id: "org.example.lib".into(),
+                    name: "Lib".into(),
+                    version: version.into(),
+                    force: false,
+                },
+            )
+            .unwrap();
+            fs::write(pkg.join("files/payload.txt"), version).unwrap();
+            let archive = repo.join(format!("packages/org.example.lib-{version}.lar"));
+            pack(&pkg, &archive).unwrap();
+        }
+        let index = build_index(&repo, &secret).unwrap();
+        write_index(&repo, &index).unwrap();
+        add_source(
+            &store,
+            "main".into(),
+            repo.display().to_string(),
+            SourcePolicy::Deps,
+            true,
+        )
+        .unwrap();
+
+        let manifest = write_root(
+            dir.path(),
+            "org.example.app",
+            "0.1.0",
+            &[("org.example.lib", "^1")],
+        );
+        let lock = resolve(&manifest, &store).unwrap();
+        let lib = lock
+            .packages
+            .iter()
+            .find(|p| p.id == "org.example.lib")
+            .unwrap();
+        assert_eq!(lib.version, "1.4.0");
+        assert!(store.get("org.example.lib", "1.4.0").unwrap().is_some());
     }
 }

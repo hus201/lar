@@ -9,6 +9,7 @@ mod policy;
 mod sources;
 mod transport;
 mod trust;
+mod versions;
 
 pub use advisories::{empty_advisories, parse_advisories, AdvisoriesFile, Advisory, Severity};
 pub use audit::{audit, audit_should_fail, AuditFinding, AuditScope};
@@ -28,6 +29,7 @@ pub use trust::{
     key_id_from_public, keygen, load_trust, save_trust, sign_content_hash, trust_add, trust_remove,
     verify_content_hash, TrustFile, TrustedKey, TRUST_FORMAT,
 };
+pub use versions::list_dep_versions;
 
 /// Result alias for this crate.
 pub type Result<T> = std::result::Result<T, Error>;

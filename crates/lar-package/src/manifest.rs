@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Component, Path};
 
-use semver::Version;
+use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 
 use crate::id::validate_package_id;
@@ -88,7 +88,7 @@ pub(crate) fn validate_manifest(manifest: &PackageManifest) -> Result<(), Error>
             }
             other => other,
         })?;
-        parse_semver(dep_ver, &format!("dependency `{dep_id}` version"))?;
+        parse_version_req(dep_ver, &format!("dependency `{dep_id}`"))?;
     }
 
     if let Some(entry) = &manifest.entry {
@@ -156,6 +156,29 @@ fn parse_semver(value: &str, label: &str) -> Result<Version, Error> {
         version: value.to_string(),
         reason: format!("{label}: {err}"),
     })
+}
+
+fn parse_version_req(value: &str, label: &str) -> Result<VersionReq, Error> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(Error::InvalidVersion {
+            version: value.to_string(),
+            reason: format!("{label}: version requirement must not be empty"),
+        });
+    }
+    let req = VersionReq::parse(trimmed).map_err(|err| Error::InvalidVersion {
+        version: value.to_string(),
+        reason: format!("{label}: {err}"),
+    })?;
+    if trimmed == "*" || req == VersionReq::STAR {
+        return Err(Error::InvalidVersion {
+            version: value.to_string(),
+            reason: format!(
+                "{label}: wildcard `*` is not allowed; use an exact version or a bounded range (e.g. ^1.0, ~1.2.3)"
+            ),
+        });
+    }
+    Ok(req)
 }
 
 fn validate_relative_payload_path(path: &str, label: &str) -> Result<(), Error> {
@@ -302,5 +325,47 @@ version = "not-a-version"
 "#,
         )
         .is_err());
+    }
+
+    #[test]
+    fn accepts_dependency_version_req() {
+        let manifest = parse_manifest(
+            r#"
+[package]
+format = 1
+id = "org.example.editor"
+name = "Example Editor"
+version = "0.1.0"
+
+[dependencies]
+"org.example.lib" = "^1.0"
+"org.example.base" = "~2.1.0"
+"org.example.util" = ">=1.0, <2"
+"#,
+        )
+        .unwrap();
+        assert_eq!(manifest.dependencies["org.example.lib"], "^1.0");
+        assert_eq!(manifest.dependencies["org.example.base"], "~2.1.0");
+    }
+
+    #[test]
+    fn rejects_wildcard_dependency() {
+        let err = parse_manifest(
+            r#"
+[package]
+format = 1
+id = "org.example.editor"
+name = "Example Editor"
+version = "0.1.0"
+
+[dependencies]
+"org.example.lib" = "*"
+"#,
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string().contains('*') || err.to_string().contains("wildcard"),
+            "{err}"
+        );
     }
 }

@@ -799,6 +799,7 @@ dependencies = [
  "lar-package",
  "lar-repo",
  "lar-store",
+ "semver",
  "serde",
  "tempfile",
  "thiserror",
