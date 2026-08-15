@@ -1,6 +1,6 @@
 # Architecture Overview
 
-**Status:** Partial — SxS store and resolver (lockfile) are implemented; application repositories and package registries are planned.
+**Status:** Partial — SxS store, resolver (lockfile), runtime, and install records are implemented; application repositories and package registries are planned.
 
 LAR consists of four major components.
 
@@ -56,7 +56,7 @@ The SxS Store is the source of truth for installed packages.
 
 ## Runtime Resolver
 
-**Status:** Partial — resolve/lockfile, symlink runtime compose, and `lar run` implemented; version ranges, fetch, and desktop launch planned — [resolve-lockfile.md](../implementation/resolve-lockfile.md), [runtime.md](../implementation/runtime.md)
+**Status:** Partial — resolve/lockfile, runtime compose/`lar run`, and install records are implemented; version ranges, fetch, and desktop launch planned — [resolve-lockfile.md](../implementation/resolve-lockfile.md), [runtime.md](../implementation/runtime.md), [install.md](../implementation/install.md)
 
 Responsible for creating application execution environments.
 

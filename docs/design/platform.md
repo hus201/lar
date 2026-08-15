@@ -1,6 +1,6 @@
 # Platform Boundary, Security, and Updates
 
-**Status:** Partial — content hashes are implemented; package signatures, install/update/rollback product flows, and OS integration policy remain planned.
+**Status:** Partial — content hashes and install records (`lar install` / `uninstall` / `list`) are implemented; package signatures, update/rollback product flows, and OS integration policy remain planned — [install.md](../implementation/install.md)
 
 ## Operating System Boundary
 

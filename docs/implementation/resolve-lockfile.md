@@ -1,6 +1,6 @@
 # LAR Resolve / Lockfile
 
-`lar resolve` turns a root `package.toml` into a deterministic `lar.lock` by walking exact dependency pins against the local SxS store. The lockfile is the input for future runtime composition.
+`lar resolve` turns a root `package.toml` into a deterministic `lar.lock` by walking exact dependency pins against the local SxS store. The lockfile is the input for runtime composition and install.
 
 ## Scope (v1)
 

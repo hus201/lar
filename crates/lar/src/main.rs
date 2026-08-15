@@ -6,6 +6,9 @@ use std::process::ExitCode;
 use clap::Parser;
 
 use cli::{Cli, Commands, PackageCmd, RepoCmd, RuntimeCmd, StoreCmd};
+use lar_manager::{
+    install as install_app, list as list_installs, uninstall as uninstall_app, InstallSource,
+};
 use lar_package::{init_package, inspect, pack, validate_package, InitOptions};
 use lar_resolver::{lockfile_path_for_manifest, resolve, write_lockfile};
 use lar_runtime::{
@@ -54,6 +57,25 @@ fn run(system: bool, command: Commands) -> Result<ExitCode, String> {
                 .map_err(|e: lar_runtime::Error| e.to_string())?;
             run_launch(system, &lockfile, compose, &args)
         }
+        Commands::Install {
+            app,
+            compose,
+            force,
+        } => {
+            let compose: ComposeMode = compose
+                .parse()
+                .map_err(|e: lar_runtime::Error| e.to_string())?;
+            run_install(system, &app, compose, force)?;
+            Ok(ExitCode::SUCCESS)
+        }
+        Commands::List => {
+            run_list_installs(system)?;
+            Ok(ExitCode::SUCCESS)
+        }
+        Commands::Uninstall { app } => {
+            run_uninstall(system, &app)?;
+            Ok(ExitCode::SUCCESS)
+        }
         Commands::Config { json } => {
             run_config(system, json)?;
             Ok(ExitCode::SUCCESS)
@@ -65,6 +87,47 @@ fn run(system: bool, command: Commands) -> Result<ExitCode, String> {
 fn open_store(system: bool) -> Store {
     let paths = Paths::from_prefix(prefix(system), system);
     Store::open(paths)
+}
+
+fn run_install(system: bool, app: &str, compose: ComposeMode, force: bool) -> Result<(), String> {
+    let store = open_store(system);
+    let source = InstallSource::parse(app).map_err(|err| err.to_string())?;
+    let outcome = install_app(&store, &source, compose, force).map_err(|err| err.to_string())?;
+    let action = if outcome.replaced {
+        "reinstalled"
+    } else {
+        "installed"
+    };
+    println!(
+        "{action} {} {} ({}) runtime {}",
+        outcome.record.id,
+        outcome.record.version,
+        outcome.record.compose,
+        outcome.record.runtime_id
+    );
+    Ok(())
+}
+
+fn run_list_installs(system: bool) -> Result<(), String> {
+    let store = open_store(system);
+    let installs = list_installs(&store).map_err(|err| err.to_string())?;
+    for rec in installs {
+        println!(
+            "{} {} {} {}",
+            rec.id, rec.version, rec.compose, rec.runtime_id
+        );
+    }
+    Ok(())
+}
+
+fn run_uninstall(system: bool, app: &str) -> Result<(), String> {
+    let store = open_store(system);
+    let record = uninstall_app(&store, app).map_err(|err| err.to_string())?;
+    println!(
+        "uninstalled {} {} (runtime {})",
+        record.id, record.version, record.runtime_id
+    );
+    Ok(())
 }
 
 fn run_runtime(system: bool, command: RuntimeCmd) -> Result<(), String> {
@@ -239,6 +302,7 @@ fn run_config(system: bool, json: bool) -> Result<(), String> {
             "store": paths.store,
             "packages": paths.packages,
             "runtimes": paths.runtimes,
+            "installs": paths.installs,
         });
         println!(
             "{}",
@@ -250,6 +314,7 @@ fn run_config(system: bool, json: bool) -> Result<(), String> {
         println!("store {}", paths.store.display());
         println!("packages {}", paths.packages.display());
         println!("runtimes {}", paths.runtimes.display());
+        println!("installs {}", paths.installs.display());
     }
     Ok(())
 }
@@ -391,6 +456,7 @@ fn command_name(command: &Commands) -> &'static str {
         },
         Commands::Run { .. } => "lar run",
         Commands::Install { .. } => "lar install",
+        Commands::List => "lar list",
         Commands::Update { .. } => "lar update",
         Commands::Rollback { .. } => "lar rollback",
         Commands::Uninstall { .. } => "lar uninstall",

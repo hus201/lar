@@ -261,12 +261,27 @@ name = "lar"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "lar-manager",
  "lar-package",
  "lar-resolver",
  "lar-runtime",
  "lar-store",
  "serde_json",
  "tempfile",
+]
+
+[[package]]
+name = "lar-manager"
+version = "0.1.0"
+dependencies = [
+ "lar-package",
+ "lar-resolver",
+ "lar-runtime",
+ "lar-store",
+ "serde",
+ "tempfile",
+ "thiserror",
+ "toml",
 ]
 
 [[package]]
@@ -315,6 +330,7 @@ name = "lar-store"
 version = "0.1.0"
 dependencies = [
  "lar-package",
+ "serde",
  "tempfile",
  "thiserror",
  "toml",

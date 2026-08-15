@@ -1,24 +1,20 @@
 [package]
-name = "lar"
+name = "lar-manager"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description.workspace = true
+description = "LAR application lifecycle: install records, list, uninstall"
 repository.workspace = true
 rust-version.workspace = true
 
-[[bin]]
-name = "lar"
-path = "src/main.rs"
-
 [dependencies]
-clap.workspace = true
 lar-package.workspace = true
-lar-manager.workspace = true
 lar-resolver.workspace = true
 lar-runtime.workspace = true
 lar-store.workspace = true
-serde_json.workspace = true
+serde = { workspace = true, features = ["derive"] }
+thiserror.workspace = true
+toml.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

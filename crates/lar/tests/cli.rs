@@ -8,6 +8,20 @@ fn lar() -> Command {
 }
 
 #[test]
+fn unimplemented_commands_are_stubbed() {
+    let output = lar()
+        .args(["update", "org.example.app"])
+        .output()
+        .expect("failed to run lar");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("lar update: not implemented yet"),
+        "{stderr}"
+    );
+}
+
+#[test]
 fn help_lists_core_commands() {
     let output = lar().arg("--help").output().expect("failed to run lar");
     assert!(output.status.success());
@@ -19,6 +33,7 @@ fn help_lists_core_commands() {
         "runtime",
         "run",
         "install",
+        "list",
         "update",
         "rollback",
         "uninstall",
@@ -27,20 +42,6 @@ fn help_lists_core_commands() {
     ] {
         assert!(stdout.contains(cmd), "missing {cmd} in --help:\n{stdout}");
     }
-}
-
-#[test]
-fn unimplemented_commands_are_stubbed() {
-    let output = lar()
-        .args(["install", "org.example.app"])
-        .output()
-        .expect("failed to run lar");
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("lar install: not implemented yet"),
-        "{stderr}"
-    );
 }
 
 #[test]
@@ -511,6 +512,162 @@ binaries = ["bin/app"]
         .unwrap();
     assert!(list.status.success());
     assert!(String::from_utf8_lossy(&list.stdout).trim().is_empty());
+}
+
+#[test]
+fn install_list_uninstall() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempdir().unwrap();
+    let prefix = dir.path().join("prefix");
+
+    let lib = dir.path().join("lib");
+    assert!(lar()
+        .args([
+            "package",
+            "init",
+            "--id",
+            "org.example.lib",
+            "--name",
+            "Lib",
+            "--version",
+            "1.0.0",
+        ])
+        .arg(&lib)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    fs::write(lib.join("files/lib.txt"), b"lib").unwrap();
+    assert!(lar()
+        .args(["package", "pack"])
+        .arg(&lib)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    assert!(lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["store", "add"])
+        .arg(lib.join("org.example.lib-1.0.0.lar"))
+        .output()
+        .unwrap()
+        .status
+        .success());
+
+    let app = dir.path().join("app");
+    assert!(lar()
+        .args([
+            "package",
+            "init",
+            "--id",
+            "org.example.app",
+            "--name",
+            "App"
+        ])
+        .arg(&app)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    let bin = app.join("files/bin");
+    fs::create_dir_all(&bin).unwrap();
+    let script = bin.join("app");
+    fs::write(&script, "#!/bin/sh\necho installed-app\n").unwrap();
+    let mut perms = fs::metadata(&script).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&script, perms).unwrap();
+    let mut manifest = fs::read_to_string(app.join("package.toml")).unwrap();
+    manifest.push_str(
+        r#"
+[dependencies]
+"org.example.lib" = "1.0.0"
+
+[entry]
+default = "bin/app"
+binaries = ["bin/app"]
+"#,
+    );
+    fs::write(app.join("package.toml"), manifest).unwrap();
+    assert!(lar()
+        .args(["package", "pack"])
+        .arg(&app)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    let lar_path = app.join("org.example.app-0.1.0.lar");
+
+    let install = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["install"])
+        .arg(&lar_path)
+        .output()
+        .unwrap();
+    assert!(
+        install.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&install.stderr)
+    );
+    let install_out = String::from_utf8_lossy(&install.stdout);
+    assert!(
+        install_out.contains("installed org.example.app"),
+        "{install_out}"
+    );
+
+    let list = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["list"])
+        .output()
+        .unwrap();
+    assert!(list.status.success());
+    let list_out = String::from_utf8_lossy(&list.stdout);
+    assert!(list_out.contains("org.example.app"), "{list_out}");
+    assert!(list_out.contains("0.1.0"), "{list_out}");
+
+    let blocked = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["store", "remove", "--force", "org.example.lib", "1.0.0"])
+        .output()
+        .unwrap();
+    assert!(!blocked.status.success());
+    let blocked_err = String::from_utf8_lossy(&blocked.stderr);
+    assert!(
+        blocked_err.contains("install:org.example.app"),
+        "{blocked_err}"
+    );
+
+    let uninstall = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["uninstall", "org.example.app"])
+        .output()
+        .unwrap();
+    assert!(
+        uninstall.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&uninstall.stderr)
+    );
+
+    let list_after = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["list"])
+        .output()
+        .unwrap();
+    assert!(list_after.status.success());
+    assert!(String::from_utf8_lossy(&list_after.stdout)
+        .trim()
+        .is_empty());
+
+    let remove_lib = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["store", "remove", "--force", "org.example.lib", "1.0.0"])
+        .output()
+        .unwrap();
+    assert!(
+        remove_lib.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&remove_lib.stderr)
+    );
 }
 
 #[test]

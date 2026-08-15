@@ -178,6 +178,8 @@ impl Store {
     pub fn remove(&self, id: &str, version: &str, force: bool) -> Result<Vec<StoredPackage>> {
         self.cleanup_tmp_adds();
 
+        self.refuse_if_install_pinned(id, version)?;
+
         if force {
             let mut visiting = std::collections::BTreeSet::new();
             let mut removed = Vec::new();
@@ -216,6 +218,23 @@ impl Store {
         Ok(vec![self.remove_one(id, version)?])
     }
 
+    fn refuse_if_install_pinned(&self, id: &str, version: &str) -> Result<()> {
+        let apps = crate::install_pins::install_referrers(&self.paths, id, version)?;
+        if apps.is_empty() {
+            return Ok(());
+        }
+        let dependents = apps
+            .iter()
+            .map(|app| format!("install:{app}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        Err(Error::InUse {
+            id: id.to_string(),
+            version: version.to_string(),
+            dependents,
+        })
+    }
+
     fn cascade_remove(
         &self,
         id: &str,
@@ -231,6 +250,8 @@ impl Store {
             return Ok(());
         }
         visiting.insert(key);
+
+        self.refuse_if_install_pinned(id, version)?;
 
         for referrer in self.referrers(id, version)? {
             self.cascade_remove(&referrer.id, &referrer.version, visiting, removed)?;
@@ -474,6 +495,60 @@ mod tests {
             ]
         );
         assert!(store.list().unwrap().is_empty());
+    }
+
+    #[test]
+    fn remove_refuses_when_pinned_by_install_record() {
+        let dir = tempdir().unwrap();
+        let store = Store::open(Paths::from_prefix(dir.path().join("prefix"), false));
+        let archive = make_lar(dir.path());
+        let stored = store.add(&archive).unwrap();
+
+        let install_dir = store.paths.installs.join("org.example.app");
+        fs::create_dir_all(&install_dir).unwrap();
+        fs::write(
+            install_dir.join("install.toml"),
+            format!(
+                r#"format = 1
+id = "org.example.app"
+version = "0.1.0"
+content_hash = "blake3:deadbeef"
+runtime_id = "runtime-test"
+compose = "symlink"
+
+[[packages]]
+id = "{}"
+version = "{}"
+content_hash = "{}"
+"#,
+                stored.id, stored.version, stored.content_hash
+            ),
+        )
+        .unwrap();
+
+        let apps = crate::install_referrers(&store.paths, &stored.id, &stored.version).unwrap();
+        assert_eq!(apps, vec!["org.example.app".to_string()]);
+
+        for force in [false, true] {
+            let err = store
+                .remove(&stored.id, &stored.version, force)
+                .unwrap_err();
+            match err {
+                Error::InUse { dependents, .. } => {
+                    assert!(
+                        dependents.contains("install:org.example.app"),
+                        "force={force}: {dependents}"
+                    );
+                }
+                other => panic!("force={force}: expected InUse, got {other}"),
+            }
+        }
+        assert!(stored.path.is_dir());
+
+        fs::remove_dir_all(&install_dir).unwrap();
+        let removed = store.remove(&stored.id, &stored.version, false).unwrap();
+        assert_eq!(removed.len(), 1);
+        assert!(!stored.path.exists());
     }
 
     #[test]

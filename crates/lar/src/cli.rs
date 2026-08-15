@@ -54,11 +54,19 @@ pub enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Install an application from a repository or local package
+    /// Install an application from a local .lar or the store
     Install {
-        /// Application package id or path to a .lar file
+        /// Path to a `.lar`, or a store package `id` / `id@version`
         app: String,
+        /// How to materialize package files into the runtime
+        #[arg(long, default_value = "symlink", value_parser = ["symlink", "hardlink", "copy"])]
+        compose: String,
+        /// Replace an existing install of the same id
+        #[arg(long)]
+        force: bool,
     },
+    /// List installed applications
+    List,
     /// Update an installed application
     Update {
         /// Application package id

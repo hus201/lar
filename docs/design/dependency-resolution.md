@@ -1,6 +1,6 @@
 # Dependency Resolution
 
-**Status:** Partial — store-backed exact pins and `lar.lock` are implemented; fetching missing packages, version ranges, and runtime creation are planned — [resolve-lockfile.md](../implementation/resolve-lockfile.md)
+**Status:** Partial — store-backed exact pins and `lar.lock` are implemented; fetching missing packages and version ranges are planned — [resolve-lockfile.md](../implementation/resolve-lockfile.md)
 
 Dependency resolution is based on application requirements.
 

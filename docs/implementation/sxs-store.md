@@ -46,24 +46,28 @@ Each `(id, version)` directory matches the `.lar` archive contents.
 
 ### Refuse (default)
 
-`store remove` deletes one `(id, version)` only if **no other package in the store** still requires it.
+`store remove` deletes one `(id, version)` only if **nothing still requires it**:
 
-A package is considered required when another stored package’s `package.toml` pins that exact id and version under `[dependencies]`.
+- No other package in the store pins that exact id and version under `[dependencies]`.
+- No install record under `{prefix}/installs/*/install.toml` lists that package in `[[packages]]`.
 
 ```bash
-lar store remove org.example.lib 1.0.0   # fails if something still depends on it
+lar store remove org.example.lib 1.0.0   # fails if a package or install still pins it
 ```
+
+Install pins are reported as `install:{app_id}` in the error (for example `install:org.example.app`). Uninstall the application before removing its packages.
 
 ### Cascade (`--force`)
 
-`store remove --force` recursively removes dependents first, then the target (dependents before dependencies). Cycles are tolerated via a visit set.
+`store remove --force` recursively removes package dependents first, then the target (dependents before dependencies). Cycles are tolerated via a visit set.
+
+**Install pins still block `--force`.** Force must not silently delete product installs; run `lar uninstall <id>` first.
 
 ```bash
 lar store remove --force org.example.lib 1.0.0
 # removes org.example.app 0.1.0, then org.example.lib 1.0.0
+# (fails if an install record still pins either package)
 ```
-
-Future install records and lockfiles that pin a package should be included as referrers the same way.
 
 ## CLI
 
@@ -79,11 +83,12 @@ lar config --json
 
 - `store add` verifies the `.lar`, extracts it into the store, and prints `id version -> path`.
 - `store list` prints `id version content_hash` (sorted).
-- `store remove` deletes one `(id, version)` if unused (refuse); with `--force`, cascades through dependents.
-- `config` prints `prefix`, `store`, and whether system mode is active.
+- `store remove` deletes one `(id, version)` if unused by packages or install pins; with `--force`, cascades through package dependents but still refuses install pins.
+- `config` prints `prefix`, `store`, `runtimes`, `installs`, and whether system mode is active.
 
 ## Related
 
 - Package format: [package-format.md](package-format.md)
 - Resolve / lockfile: [resolve-lockfile.md](resolve-lockfile.md)
+- Install records: [install.md](install.md)
 - Design: [SxS Package Store](../design/architecture.md#sxs-package-store)

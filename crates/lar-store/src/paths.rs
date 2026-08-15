@@ -14,6 +14,7 @@ pub struct Paths {
     pub store: PathBuf,
     pub packages: PathBuf,
     pub runtimes: PathBuf,
+    pub installs: PathBuf,
     pub system: bool,
 }
 
@@ -23,11 +24,13 @@ impl Paths {
         let store = prefix.join("store");
         let packages = store.join("packages");
         let runtimes = prefix.join("runtimes");
+        let installs = prefix.join("installs");
         Self {
             prefix,
             store,
             packages,
             runtimes,
+            installs,
             system,
         }
     }
@@ -69,5 +72,6 @@ mod tests {
             PathBuf::from("/tmp/lar-test/store/packages")
         );
         assert_eq!(paths.runtimes, PathBuf::from("/tmp/lar-test/runtimes"));
+        assert_eq!(paths.installs, PathBuf::from("/tmp/lar-test/installs"));
     }
 }
