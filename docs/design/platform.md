@@ -1,6 +1,6 @@
 # Platform Boundary, Security, and Updates
 
-**Status:** Partial — content hashes, package signatures (repo fetch), advisories/`lar audit`, and install records are implemented; update/rollback product flows and OS integration policy remain planned — [repos.md](../implementation/repos.md), [install.md](../implementation/install.md)
+**Status:** Partial — content hashes, package signatures (repo fetch), advisories/`lar audit`, install records, and update/rollback are implemented; OS integration policy remains planned — [repos.md](../implementation/repos.md), [install.md](../implementation/install.md)
 
 ## Operating System Boundary
 
@@ -45,8 +45,9 @@ Applications and operating systems have independent update cycles.
 
 Application updates:
 
-- Managed via package sources (repos) that allow applications.
+- Managed via package sources (repos) that allow applications (`lar update` picks the newest newer semver).
 - Resolve new runtime environments.
+- Keep one previous generation for rollback.
 - Do not require OS upgrades.
 
 Operating system updates:
@@ -58,8 +59,8 @@ Operating system updates:
 
 Because packages are immutable:
 
-- Previous runtimes remain available.
-- Failed updates can be reverted.
-- Multiple versions can coexist.
+- Previous runtimes remain available while stashed in `previous.toml`.
+- Failed updates can be reverted with `lar rollback`.
+- Multiple versions can coexist in the SxS store.
 
 Rollback does not require rebuilding packages.

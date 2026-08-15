@@ -8,7 +8,8 @@ use clap::Parser;
 
 use cli::{Cli, Commands, PackageCmd, RepoCmd, RuntimeCmd, StoreCmd, TrustCmd};
 use lar_manager::{
-    install as install_app, list as list_installs, uninstall as uninstall_app, InstallSource,
+    install as install_app, list as list_installs, rollback as rollback_app,
+    uninstall as uninstall_app, update as update_app, InstallSource, UpdateOutcome,
 };
 use lar_package::{init_package, inspect, pack, validate_package, InitOptions};
 use lar_repo::{
@@ -77,6 +78,14 @@ fn run(system: bool, command: Commands) -> Result<ExitCode, String> {
             run_list_installs(system)?;
             Ok(ExitCode::SUCCESS)
         }
+        Commands::Update { app } => {
+            run_update(system, &app)?;
+            Ok(ExitCode::SUCCESS)
+        }
+        Commands::Rollback { app } => {
+            run_rollback(system, &app)?;
+            Ok(ExitCode::SUCCESS)
+        }
         Commands::Uninstall { app } => {
             run_uninstall(system, &app)?;
             Ok(ExitCode::SUCCESS)
@@ -90,7 +99,6 @@ fn run(system: bool, command: Commands) -> Result<ExitCode, String> {
             run_config(system, json)?;
             Ok(ExitCode::SUCCESS)
         }
-        other => Err(format!("{}: not implemented yet", command_name(&other))),
     }
 }
 
@@ -136,6 +144,32 @@ fn run_uninstall(system: bool, app: &str) -> Result<(), String> {
     println!(
         "uninstalled {} {} (runtime {})",
         record.id, record.version, record.runtime_id
+    );
+    Ok(())
+}
+
+fn run_update(system: bool, app: &str) -> Result<(), String> {
+    let store = open_store(system);
+    match update_app(&store, app).map_err(|err| err.to_string())? {
+        UpdateOutcome::UpToDate(rec) => {
+            println!("up to date {} {}", rec.id, rec.version);
+        }
+        UpdateOutcome::Updated { from, to } => {
+            println!(
+                "updated {} {} -> {} (runtime {})",
+                to.id, from.version, to.version, to.runtime_id
+            );
+        }
+    }
+    Ok(())
+}
+
+fn run_rollback(system: bool, app: &str) -> Result<(), String> {
+    let store = open_store(system);
+    let outcome = rollback_app(&store, app).map_err(|err| err.to_string())?;
+    println!(
+        "rolled back {} {} (runtime {})",
+        outcome.record.id, outcome.record.version, outcome.record.runtime_id
     );
     Ok(())
 }
@@ -344,13 +378,7 @@ fn run_repo(system: bool, command: RepoCmd) -> Result<(), String> {
             main,
             name,
         } => {
-            let policy = policy.unwrap_or_else(|| {
-                if main {
-                    "deps".into()
-                } else {
-                    "both".into()
-                }
-            });
+            let policy = policy.unwrap_or_else(|| if main { "deps".into() } else { "both".into() });
             let policy: SourcePolicy =
                 policy.parse().map_err(|e: lar_repo::Error| e.to_string())?;
             let name = name.unwrap_or_else(|| default_source_name(&uri, main));
@@ -579,47 +607,4 @@ fn package_dir_stem(dir: &Path) -> Option<String> {
         .and_then(|s| s.to_str())
         .filter(|s| !s.is_empty() && *s != "/" && *s != ".")
         .map(|s| s.to_string())
-}
-
-fn command_name(command: &Commands) -> &'static str {
-    match command {
-        Commands::Package { command } => match command {
-            PackageCmd::Init { .. } => "lar package init",
-            PackageCmd::Validate { .. } => "lar package validate",
-            PackageCmd::Pack { .. } => "lar package pack",
-            PackageCmd::Inspect { .. } => "lar package inspect",
-            PackageCmd::Keygen { .. } => "lar package keygen",
-        },
-        Commands::Store { command } => match command {
-            StoreCmd::Add { .. } => "lar store add",
-            StoreCmd::List => "lar store list",
-            StoreCmd::Remove { .. } => "lar store remove",
-        },
-        Commands::Resolve { .. } => "lar resolve",
-        Commands::Runtime { command } => match command {
-            RuntimeCmd::Build { .. } => "lar runtime build",
-            RuntimeCmd::List => "lar runtime list",
-            RuntimeCmd::Gc { .. } => "lar runtime gc",
-            RuntimeCmd::Inspect { .. } => "lar runtime inspect",
-        },
-        Commands::Run { .. } => "lar run",
-        Commands::Install { .. } => "lar install",
-        Commands::List => "lar list",
-        Commands::Update { .. } => "lar update",
-        Commands::Rollback { .. } => "lar rollback",
-        Commands::Uninstall { .. } => "lar uninstall",
-        Commands::Repo { command } => match command {
-            RepoCmd::Add { .. } => "lar repo add",
-            RepoCmd::List => "lar repo list",
-            RepoCmd::Remove { .. } => "lar repo remove",
-            RepoCmd::Index { .. } => "lar repo index",
-            RepoCmd::Trust { command } => match command {
-                TrustCmd::Add { .. } => "lar repo trust add",
-                TrustCmd::List => "lar repo trust list",
-                TrustCmd::Remove { .. } => "lar repo trust remove",
-            },
-        },
-        Commands::Audit { .. } => "lar audit",
-        Commands::Config { .. } => "lar config",
-    }
 }

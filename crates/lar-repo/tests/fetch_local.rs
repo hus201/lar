@@ -135,8 +135,7 @@ fn bad_signature_refuses_fetch() {
     let mut index = build_index(&repo, &secret_a).unwrap();
     // Replace with a valid Ed25519 signature from a different key over the same hash.
     let content_hash = index.packages[0].content_hash.clone();
-    index.packages[0].signature =
-        lar_repo::sign_content_hash(&secret_b, &content_hash).unwrap();
+    index.packages[0].signature = lar_repo::sign_content_hash(&secret_b, &content_hash).unwrap();
     write_index(&repo, &index).unwrap();
 
     add_source(

@@ -6,6 +6,7 @@ use lar_package::load_manifest;
 use lar_resolver::{resolve_manifest, verify_lockfile_ready, write_lockfile, Lockfile};
 use lar_runtime::{build, ComposeMode};
 use lar_store::{Store, StoredPackage};
+use semver::Version;
 
 use crate::record::{InstallPackage, InstallRecord, INSTALL_FORMAT};
 use crate::Error;
@@ -17,6 +18,27 @@ pub struct InstallOutcome {
     pub record: InstallRecord,
     /// True when an existing install of the same id was replaced (`--force`).
     pub replaced: bool,
+}
+
+/// Result of [`update`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UpdateOutcome {
+    /// No newer version in apps sources.
+    UpToDate(InstallRecord),
+    /// Replaced active with a newer apps-source version.
+    Updated {
+        from: InstallRecord,
+        to: InstallRecord,
+    },
+}
+
+/// Result of [`rollback`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RollbackOutcome {
+    /// New active install (was previous).
+    pub record: InstallRecord,
+    /// Displaced active (now previous).
+    pub previous: InstallRecord,
 }
 
 /// Where to take the application root from.
@@ -73,7 +95,7 @@ pub fn install(
     let root = ensure_root(store, source)?;
     let install_dir = store.paths().installs.join(&root.id);
 
-    let previous = if install_dir.join("install.toml").is_file() {
+    let displaced = if install_dir.join("install.toml").is_file() {
         let prev = load(store, &root.id)?;
         if !force {
             return Err(Error::AlreadyInstalled(root.id.clone()));
@@ -82,20 +104,85 @@ pub fn install(
     } else {
         None
     };
-    let replaced = previous.is_some();
+    let replaced = displaced.is_some();
+    let older_previous = if replaced {
+        load_previous(store, &root.id)?
+    } else {
+        None
+    };
 
-    let manifest = load_manifest(&root.path.join("package.toml"))?;
-    let lock = resolve_manifest(&manifest, store)?;
-    verify_lockfile_ready(&lock, store)?;
+    let record = compose_install(store, &root, compose)?;
+    activate_install(store, &record, displaced.as_ref())?;
 
-    let content_hash = root.content_hash.clone();
-    let packages = packages_from_lock(&lock)?;
+    if let Some(older) = older_previous {
+        let keep_active = older.runtime_id == record.runtime_id;
+        let keep_prev = displaced
+            .as_ref()
+            .is_some_and(|d| d.runtime_id == older.runtime_id);
+        if !keep_active && !keep_prev {
+            remove_runtime_dir(store, &older.runtime_id);
+        }
+    }
 
-    fs::create_dir_all(&store.paths().installs).map_err(|source| Error::Io {
-        path: store.paths().installs.clone(),
-        source,
-    })?;
+    Ok(InstallOutcome { record, replaced })
+}
 
+/// Update an installed app to the newest newer semver from apps sources.
+pub fn update(store: &Store, app_id: &str) -> Result<UpdateOutcome> {
+    cleanup_tmp_installs(store);
+    let current = load(store, app_id)?;
+    let current_ver = parse_semver(&current.version)?;
+
+    let candidates = apps_versions_for(store, app_id)?;
+    let mut best: Option<(Version, String)> = None;
+    for ver_str in candidates {
+        let Ok(ver) = Version::parse(&ver_str) else {
+            continue;
+        };
+        if ver <= current_ver {
+            continue;
+        }
+        match &best {
+            None => best = Some((ver, ver_str)),
+            Some((prev, _)) if ver > *prev => best = Some((ver, ver_str)),
+            _ => {}
+        }
+    }
+
+    let Some((_, newer)) = best else {
+        return Ok(UpdateOutcome::UpToDate(current));
+    };
+
+    let older_previous = load_previous(store, app_id)?;
+    let source = InstallSource::Store {
+        id: app_id.to_string(),
+        version: Some(newer),
+    };
+    let root = ensure_root(store, &source)?;
+    let record = compose_install(store, &root, current.compose)?;
+    activate_install(store, &record, Some(&current))?;
+
+    if let Some(older) = older_previous {
+        let keep_active = older.runtime_id == record.runtime_id;
+        let keep_prev = older.runtime_id == current.runtime_id;
+        if !keep_active && !keep_prev {
+            remove_runtime_dir(store, &older.runtime_id);
+        }
+    }
+
+    Ok(UpdateOutcome::Updated {
+        from: current,
+        to: record,
+    })
+}
+
+/// Swap active install with `previous.toml`.
+pub fn rollback(store: &Store, app_id: &str) -> Result<RollbackOutcome> {
+    cleanup_tmp_installs(store);
+    let active = load(store, app_id)?;
+    let previous = load_previous(store, app_id)?.ok_or_else(|| Error::NoPrevious(app_id.into()))?;
+
+    let install_dir = store.paths().installs.join(app_id);
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_nanos())
@@ -109,30 +196,8 @@ pub fn install(
         source,
     })?;
 
-    let lock_path = tmp.join("lar.lock");
-    write_lockfile(&lock_path, &lock)?;
-    let built = build(&lock_path, store, compose)?;
-
-    let record = InstallRecord {
-        format: INSTALL_FORMAT,
-        id: root.id.clone(),
-        version: root.version.clone(),
-        content_hash,
-        runtime_id: built.runtime_id.clone(),
-        compose,
-        packages,
-    };
-    record.validate().map_err(Error::InvalidRecord)?;
-
-    let text = toml::to_string_pretty(&record)
-        .map_err(|err| Error::Other(format!("serialize install.toml: {err}")))?;
-    let meta_path = tmp.join("install.toml");
-    fs::write(&meta_path, text).map_err(|source| Error::Io {
-        path: meta_path.clone(),
-        source,
-    })?;
-    // Lockfile is only needed for build; keep the install dir lean.
-    let _ = fs::remove_file(&lock_path);
+    write_record(&tmp.join("install.toml"), &previous)?;
+    write_record(&tmp.join("previous.toml"), &active)?;
 
     if install_dir.exists() {
         fs::remove_dir_all(&install_dir).map_err(|source| Error::Io {
@@ -145,20 +210,24 @@ pub fn install(
         source,
     })?;
 
-    if let Some(prev) = previous {
+    Ok(RollbackOutcome {
+        record: previous,
+        previous: active,
+    })
+}
+
+/// Remove an install record and its composed runtimes. Store packages are kept.
+pub fn uninstall(store: &Store, app_id: &str) -> Result<InstallRecord> {
+    cleanup_tmp_installs(store);
+    let record = load(store, app_id)?;
+    let previous = load_previous(store, app_id)?;
+
+    remove_runtime_dir(store, &record.runtime_id);
+    if let Some(prev) = &previous {
         if prev.runtime_id != record.runtime_id {
             remove_runtime_dir(store, &prev.runtime_id);
         }
     }
-
-    Ok(InstallOutcome { record, replaced })
-}
-
-/// Remove an install record and its composed runtime. Store packages are kept.
-pub fn uninstall(store: &Store, app_id: &str) -> Result<InstallRecord> {
-    cleanup_tmp_installs(store);
-    let record = load(store, app_id)?;
-    remove_runtime_dir(store, &record.runtime_id);
 
     let dir = store.paths().installs.join(app_id);
     fs::remove_dir_all(&dir).map_err(|source| Error::Io {
@@ -174,20 +243,16 @@ pub fn load(store: &Store, app_id: &str) -> Result<InstallRecord> {
     if !path.is_file() {
         return Err(Error::NotInstalled(app_id.to_string()));
     }
-    let text = fs::read_to_string(&path).map_err(|source| Error::Io {
-        path: path.clone(),
-        source,
-    })?;
-    let record: InstallRecord =
-        toml::from_str(&text).map_err(|err| Error::InvalidRecord(err.to_string()))?;
-    record.validate().map_err(Error::InvalidRecord)?;
-    if record.id != app_id {
-        return Err(Error::InvalidRecord(format!(
-            "install id `{}` does not match directory `{app_id}`",
-            record.id
-        )));
+    read_record(&path, app_id)
+}
+
+/// Load `previous.toml` if present.
+pub fn load_previous(store: &Store, app_id: &str) -> Result<Option<InstallRecord>> {
+    let path = store.paths().installs.join(app_id).join("previous.toml");
+    if !path.is_file() {
+        return Ok(None);
     }
-    Ok(record)
+    Ok(Some(read_record(&path, app_id)?))
 }
 
 /// List installed applications (sorted by id).
@@ -229,6 +294,145 @@ pub fn list(store: &Store) -> Result<Vec<InstallRecord>> {
 
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
+}
+
+fn compose_install(
+    store: &Store,
+    root: &StoredPackage,
+    compose: ComposeMode,
+) -> Result<InstallRecord> {
+    let manifest = load_manifest(&root.path.join("package.toml"))?;
+    let lock = resolve_manifest(&manifest, store)?;
+    verify_lockfile_ready(&lock, store)?;
+
+    fs::create_dir_all(&store.paths().installs).map_err(|source| Error::Io {
+        path: store.paths().installs.clone(),
+        source,
+    })?;
+
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let tmp = store.paths().installs.join(format!(".tmp-build-{nanos}"));
+    if tmp.exists() {
+        let _ = fs::remove_dir_all(&tmp);
+    }
+    fs::create_dir_all(&tmp).map_err(|source| Error::Io {
+        path: tmp.clone(),
+        source,
+    })?;
+
+    let lock_path = tmp.join("lar.lock");
+    write_lockfile(&lock_path, &lock)?;
+    let built = build(&lock_path, store, compose)?;
+    let _ = fs::remove_dir_all(&tmp);
+
+    let record = InstallRecord {
+        format: INSTALL_FORMAT,
+        id: root.id.clone(),
+        version: root.version.clone(),
+        content_hash: root.content_hash.clone(),
+        runtime_id: built.runtime_id.clone(),
+        compose,
+        packages: packages_from_lock(&lock)?,
+    };
+    record.validate().map_err(Error::InvalidRecord)?;
+    Ok(record)
+}
+
+/// Atomically write active install (+ optional previous stash). Keeps displaced runtime.
+fn activate_install(
+    store: &Store,
+    record: &InstallRecord,
+    displaced: Option<&InstallRecord>,
+) -> Result<()> {
+    let install_dir = store.paths().installs.join(&record.id);
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let tmp = store.paths().installs.join(format!(".tmp-install-{nanos}"));
+    if tmp.exists() {
+        let _ = fs::remove_dir_all(&tmp);
+    }
+    fs::create_dir_all(&tmp).map_err(|source| Error::Io {
+        path: tmp.clone(),
+        source,
+    })?;
+
+    write_record(&tmp.join("install.toml"), record)?;
+    if let Some(prev) = displaced {
+        write_record(&tmp.join("previous.toml"), prev)?;
+    }
+
+    if install_dir.exists() {
+        fs::remove_dir_all(&install_dir).map_err(|source| Error::Io {
+            path: install_dir.clone(),
+            source,
+        })?;
+    }
+    fs::rename(&tmp, &install_dir).map_err(|source| Error::Io {
+        path: install_dir.clone(),
+        source,
+    })?;
+    Ok(())
+}
+
+fn write_record(path: &Path, record: &InstallRecord) -> Result<()> {
+    record.validate().map_err(Error::InvalidRecord)?;
+    let text = toml::to_string_pretty(record)
+        .map_err(|err| Error::Other(format!("serialize install record: {err}")))?;
+    fs::write(path, text).map_err(|source| Error::Io {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
+fn read_record(path: &Path, app_id: &str) -> Result<InstallRecord> {
+    let text = fs::read_to_string(path).map_err(|source| Error::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let record: InstallRecord =
+        toml::from_str(&text).map_err(|err| Error::InvalidRecord(err.to_string()))?;
+    record.validate().map_err(Error::InvalidRecord)?;
+    if record.id != app_id {
+        return Err(Error::InvalidRecord(format!(
+            "install id `{}` does not match directory `{app_id}`",
+            record.id
+        )));
+    }
+    Ok(record)
+}
+
+fn parse_semver(version: &str) -> Result<Version> {
+    Version::parse(version).map_err(|err| {
+        Error::Other(format!(
+            "install version `{version}` is not valid semver: {err}"
+        ))
+    })
+}
+
+fn apps_versions_for(store: &Store, id: &str) -> Result<Vec<String>> {
+    let sources = lar_repo::load_sources(store)?;
+    let mut found = Vec::new();
+    for src in lar_repo::ordered_apps_sources(&sources) {
+        let Ok(base) = lar_repo::parse_uri(&src.uri) else {
+            continue;
+        };
+        let Ok(index) = lar_repo::read_index(&base) else {
+            continue;
+        };
+        for pkg in &index.packages {
+            if pkg.id == id {
+                found.push(pkg.version.clone());
+            }
+        }
+    }
+    found.sort();
+    found.dedup();
+    Ok(found)
 }
 
 fn ensure_root(store: &Store, source: &InstallSource) -> Result<StoredPackage> {
@@ -285,7 +489,6 @@ fn lookup_store_root(store: &Store, id: &str, version: Option<&str>) -> Result<S
     let matches: Vec<_> = store.list()?.into_iter().filter(|p| p.id == id).collect();
     match matches.len() {
         0 => {
-            // Try to discover a unique version from apps sources by scanning indexes.
             let sources = lar_repo::load_sources(store)?;
             let mut found: Vec<(String, String)> = Vec::new();
             for src in lar_repo::ordered_apps_sources(&sources) {
@@ -384,7 +587,7 @@ fn cleanup_tmp_installs(store: &Store) {
     for entry in entries.flatten() {
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if !name.starts_with(".tmp-install-") {
+        if !(name.starts_with(".tmp-install-") || name.starts_with(".tmp-build-")) {
             continue;
         }
         let path = entry.path();

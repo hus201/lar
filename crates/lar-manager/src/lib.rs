@@ -5,7 +5,10 @@ mod ops;
 mod record;
 
 pub use error::Error;
-pub use ops::{install, list, load, uninstall, InstallOutcome, InstallSource};
+pub use ops::{
+    install, list, load, load_previous, rollback, uninstall, update, InstallOutcome, InstallSource,
+    RollbackOutcome, UpdateOutcome,
+};
 pub use record::{InstallPackage, InstallRecord, INSTALL_FORMAT};
 
 /// Result alias for this crate.
@@ -185,16 +188,26 @@ mod tests {
         let third = install(&store, &source, ComposeMode::Copy, true).unwrap();
         assert!(third.replaced);
         assert_ne!(first.record.runtime_id, third.record.runtime_id);
-        assert!(!store
+        // Displaced generation is kept for rollback.
+        assert!(store
             .paths()
             .runtimes
-            .join(&first.record.runtime_id)
-            .exists());
+            .join(&second.record.runtime_id)
+            .is_dir());
+        assert!(store
+            .paths()
+            .installs
+            .join("org.example.app/previous.toml")
+            .is_file());
         assert!(store
             .paths()
             .runtimes
             .join(&third.record.runtime_id)
             .is_dir());
+
+        let rolled = rollback(&store, "org.example.app").unwrap();
+        assert_eq!(rolled.record.runtime_id, second.record.runtime_id);
+        assert_eq!(rolled.previous.runtime_id, third.record.runtime_id);
     }
 
     #[test]

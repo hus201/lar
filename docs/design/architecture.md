@@ -1,6 +1,6 @@
 # Architecture Overview
 
-**Status:** Partial — SxS store, resolver (lockfile), runtime, install records, and package sources (fetch/signatures/advisories) are implemented; version ranges and update/rollback remain planned.
+**Status:** Partial — SxS store, resolver (lockfile), runtime, install records (including update/rollback), and package sources (fetch/signatures/advisories) are implemented; version ranges and desktop launch remain planned.
 
 LAR consists of four major components.
 
@@ -98,4 +98,4 @@ Responsibilities:
 
 **Status:** Partial — [install.md](../implementation/install.md)
 
-Install records under `{prefix}/installs/` track what the user installed, pin store packages, and point at a composed runtime. Update/rollback remain planned and will hang on those records.
+Install records under `{prefix}/installs/` track what the user installed, pin store packages, and point at a composed runtime. `lar update` / `lar rollback` keep a single previous generation — [install.md](../implementation/install.md).

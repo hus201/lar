@@ -1,7 +1,8 @@
 //! Minimal install-record scanner for store remove referrers.
 //!
 //! Kept inside `lar-store` (no dependency on `lar-manager`) so remove can
-//! refuse packages pinned by `{prefix}/installs/*/install.toml`.
+//! refuse packages pinned by `{prefix}/installs/*/install.toml` and
+//! `previous.toml`.
 
 use std::fs;
 use std::path::Path;
@@ -57,21 +58,23 @@ pub fn install_referrers(paths: &Paths, package_id: &str, version: &str) -> Resu
         if !dir.is_dir() {
             continue;
         }
-        let meta_path = dir.join("install.toml");
-        if !meta_path.is_file() {
-            continue;
-        }
-        match load_pin_file(&meta_path) {
-            Ok(pin) => {
-                if pin
-                    .packages
-                    .iter()
-                    .any(|p| p.id == package_id && p.version == version)
-                {
-                    apps.push(pin.id);
-                }
+        for file_name in ["install.toml", "previous.toml"] {
+            let meta_path = dir.join(file_name);
+            if !meta_path.is_file() {
+                continue;
             }
-            Err(_) => continue,
+            match load_pin_file(&meta_path) {
+                Ok(pin) => {
+                    if pin
+                        .packages
+                        .iter()
+                        .any(|p| p.id == package_id && p.version == version)
+                    {
+                        apps.push(pin.id);
+                    }
+                }
+                Err(_) => continue,
+            }
         }
     }
 
@@ -86,7 +89,7 @@ fn load_pin_file(path: &Path) -> Result<InstallPinFile> {
         source,
     })?;
     let pin: InstallPinFile = toml::from_str(&text)
-        .map_err(|err| Error::Other(format!("invalid install.toml: {err}")))?;
+        .map_err(|err| Error::Other(format!("invalid install record: {err}")))?;
     if pin.format != 0 && pin.format != INSTALL_FORMAT {
         return Err(Error::Other(format!(
             "unsupported install format {} in {}",
@@ -96,7 +99,7 @@ fn load_pin_file(path: &Path) -> Result<InstallPinFile> {
     }
     if pin.id.is_empty() {
         return Err(Error::Other(format!(
-            "install.toml missing id: {}",
+            "install record missing id: {}",
             path.display()
         )));
     }

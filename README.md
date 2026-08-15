@@ -26,12 +26,12 @@ cargo run -p lar -- runtime build
 cargo run -p lar -- run
 cargo run -p lar -- repo add --main /path/to/repo
 cargo run -p lar -- audit
+cargo run -p lar -- update org.example.app
+cargo run -p lar -- rollback org.example.app
 cargo run -p lar -- config
 ```
 
 See [docs/](docs/) for the documentation index: [proposal](docs/proposal.md), [design](docs/design/), and [implementation](docs/implementation/) (package format, SxS store, resolve/lockfile, runtime, install, repos).
-
-`lar update` and `lar rollback` are defined but not implemented yet.
 
 ## Build
 

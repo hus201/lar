@@ -11,6 +11,9 @@ pub enum Error {
     #[error("application not installed: {0}")]
     NotInstalled(String),
 
+    #[error("no previous install to roll back for {0}")]
+    NoPrevious(String),
+
     #[error("package not found in store: {id} {version}")]
     NotInStore { id: String, version: String },
 

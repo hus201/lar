@@ -8,17 +8,81 @@ fn lar() -> Command {
 }
 
 #[test]
-fn unimplemented_commands_are_stubbed() {
+fn update_requires_installed_app() {
+    let dir = tempdir().unwrap();
+    let prefix = dir.path().join("prefix");
     let output = lar()
+        .env("LAR_USER_PREFIX", &prefix)
         .args(["update", "org.example.app"])
         .output()
         .expect("failed to run lar");
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("lar update: not implemented yet"),
-        "{stderr}"
+    assert!(stderr.contains("not installed"), "{stderr}");
+}
+
+#[test]
+fn rollback_requires_previous() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempdir().unwrap();
+    let prefix = dir.path().join("prefix");
+    let app = dir.path().join("app");
+    assert!(lar()
+        .args([
+            "package",
+            "init",
+            "--id",
+            "org.example.app",
+            "--name",
+            "App",
+        ])
+        .arg(&app)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    let bin = app.join("files/bin");
+    fs::create_dir_all(&bin).unwrap();
+    let script = bin.join("app");
+    fs::write(&script, "#!/bin/sh\necho hi\n").unwrap();
+    let mut perms = fs::metadata(&script).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&script, perms).unwrap();
+    let mut manifest = fs::read_to_string(app.join("package.toml")).unwrap();
+    manifest.push_str(
+        r#"
+
+[entry]
+default = "bin/app"
+binaries = ["bin/app"]
+"#,
     );
+    fs::write(app.join("package.toml"), manifest).unwrap();
+    assert!(lar()
+        .args(["package", "pack"])
+        .arg(&app)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    assert!(lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["install"])
+        .arg(app.join("org.example.app-0.1.0.lar"))
+        .output()
+        .unwrap()
+        .status
+        .success());
+
+    let output = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["rollback", "org.example.app"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("no previous"), "{stderr}");
 }
 
 #[test]
@@ -1363,3 +1427,179 @@ binaries = ["bin/app"]
     );
 }
 
+#[test]
+fn update_and_rollback_from_apps_source() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempdir().unwrap();
+    let prefix = dir.path().join("prefix");
+    let keys = dir.path().join("keys");
+    let repo = dir.path().join("repo");
+    fs::create_dir_all(repo.join("packages")).unwrap();
+
+    assert!(lar()
+        .args(["package", "keygen", "--out"])
+        .arg(&keys)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    assert!(lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["repo", "trust", "add"])
+        .arg(keys.join("ed25519.pub"))
+        .output()
+        .unwrap()
+        .status
+        .success());
+
+    for (version, body) in [("0.1.0", "v1"), ("0.2.0", "v2")] {
+        let app = dir.path().join(format!("app-{version}"));
+        assert!(lar()
+            .args([
+                "package",
+                "init",
+                "--id",
+                "org.example.upapp",
+                "--name",
+                "Up App",
+                "--version",
+                version,
+            ])
+            .arg(&app)
+            .output()
+            .unwrap()
+            .status
+            .success());
+        let bin = app.join("files/bin");
+        fs::create_dir_all(&bin).unwrap();
+        let script = bin.join("app");
+        fs::write(&script, format!("#!/bin/sh\necho {body}\n")).unwrap();
+        let mut perms = fs::metadata(&script).unwrap().permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&script, perms).unwrap();
+        let mut manifest = fs::read_to_string(app.join("package.toml")).unwrap();
+        manifest.push_str(
+            r#"
+
+[entry]
+default = "bin/app"
+binaries = ["bin/app"]
+"#,
+        );
+        fs::write(app.join("package.toml"), manifest).unwrap();
+        assert!(lar()
+            .args(["package", "pack"])
+            .arg(&app)
+            .output()
+            .unwrap()
+            .status
+            .success());
+        fs::copy(
+            app.join(format!("org.example.upapp-{version}.lar")),
+            repo.join(format!("packages/org.example.upapp-{version}.lar")),
+        )
+        .unwrap();
+    }
+
+    assert!(lar()
+        .args(["repo", "index"])
+        .arg(&repo)
+        .args(["--sign-key"])
+        .arg(keys.join("ed25519.sec"))
+        .output()
+        .unwrap()
+        .status
+        .success());
+    assert!(lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["repo", "add", "--policy", "apps", "--name", "vendor"])
+        .arg(&repo)
+        .output()
+        .unwrap()
+        .status
+        .success());
+
+    let install = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["install", "org.example.upapp@0.1.0"])
+        .output()
+        .unwrap();
+    assert!(
+        install.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&install.stderr)
+    );
+
+    let update = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["update", "org.example.upapp"])
+        .output()
+        .unwrap();
+    assert!(
+        update.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&update.stderr)
+    );
+    let out = String::from_utf8_lossy(&update.stdout);
+    assert!(
+        out.contains("updated") && out.contains("0.1.0") && out.contains("0.2.0"),
+        "{out}"
+    );
+
+    let up_to_date = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["update", "org.example.upapp"])
+        .output()
+        .unwrap();
+    assert!(up_to_date.status.success());
+    assert!(
+        String::from_utf8_lossy(&up_to_date.stdout).contains("up to date"),
+        "{}",
+        String::from_utf8_lossy(&up_to_date.stdout)
+    );
+
+    let list = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["list"])
+        .output()
+        .unwrap();
+    assert!(String::from_utf8_lossy(&list.stdout).contains("0.2.0"));
+
+    // previous.toml pins still block store remove
+    let remove_old = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["store", "remove", "org.example.upapp", "0.1.0"])
+        .output()
+        .unwrap();
+    assert!(!remove_old.status.success());
+    assert!(
+        String::from_utf8_lossy(&remove_old.stderr).contains("install:org.example.upapp"),
+        "{}",
+        String::from_utf8_lossy(&remove_old.stderr)
+    );
+
+    let rollback = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["rollback", "org.example.upapp"])
+        .output()
+        .unwrap();
+    assert!(
+        rollback.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&rollback.stderr)
+    );
+    let rb = String::from_utf8_lossy(&rollback.stdout);
+    assert!(rb.contains("rolled back") && rb.contains("0.1.0"), "{rb}");
+
+    let list2 = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["list"])
+        .output()
+        .unwrap();
+    assert!(
+        String::from_utf8_lossy(&list2.stdout).contains("0.1.0"),
+        "{}",
+        String::from_utf8_lossy(&list2.stdout)
+    );
+}
