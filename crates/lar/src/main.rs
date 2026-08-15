@@ -7,6 +7,7 @@ use clap::Parser;
 
 use cli::{Cli, Commands, PackageCmd, RepoCmd, RuntimeCmd, StoreCmd};
 use lar_package::{init_package, inspect, pack, validate_package, InitOptions};
+use lar_resolver::{lockfile_path_for_manifest, resolve, write_lockfile};
 use lar_store::{prefix, Paths, Store};
 
 fn main() -> ExitCode {
@@ -25,6 +26,7 @@ fn run(system: bool, command: Commands) -> Result<(), String> {
     match command {
         Commands::Package { command } => run_package(command),
         Commands::Store { command } => run_store(system, command),
+        Commands::Resolve { manifest } => run_resolve(system, &manifest),
         Commands::Config { json } => run_config(system, json),
         other => Err(format!("{}: not implemented yet", command_name(&other))),
     }
@@ -33,6 +35,23 @@ fn run(system: bool, command: Commands) -> Result<(), String> {
 fn open_store(system: bool) -> Store {
     let paths = Paths::from_prefix(prefix(system), system);
     Store::open(paths)
+}
+
+fn run_resolve(system: bool, manifest: &Path) -> Result<(), String> {
+    let store = open_store(system);
+    let manifest_path =
+        lar_package::resolve_manifest_path(manifest).map_err(|err| err.to_string())?;
+    let lock = resolve(&manifest_path, &store).map_err(|err| err.to_string())?;
+    let out = lockfile_path_for_manifest(&manifest_path).map_err(|err| err.to_string())?;
+    write_lockfile(&out, &lock).map_err(|err| err.to_string())?;
+    println!(
+        "resolved {} {} ({} packages) -> {}",
+        lock.root.id,
+        lock.root.version,
+        lock.packages.len(),
+        out.display()
+    );
+    Ok(())
 }
 
 fn run_store(system: bool, command: StoreCmd) -> Result<(), String> {

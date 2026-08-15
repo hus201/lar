@@ -63,7 +63,7 @@ lar store remove --force org.example.lib 1.0.0
 # removes org.example.app 0.1.0, then org.example.lib 1.0.0
 ```
 
-Future install/lockfile records should be included as referrers the same way.
+Future install records and lockfiles that pin a package should be included as referrers the same way.
 
 ## CLI
 
@@ -85,4 +85,5 @@ lar config --json
 ## Related
 
 - Package format: [package-format.md](package-format.md)
+- Resolve / lockfile: [resolve-lockfile.md](resolve-lockfile.md)
 - Design: SxS Package Store in [design-specification.md](design-specification.md)

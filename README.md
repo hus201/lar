@@ -20,10 +20,11 @@ cargo run -p lar -- package inspect org.example.editor-0.1.0.lar
 cargo run -p lar -- store add org.example.editor-0.1.0.lar
 cargo run -p lar -- store list
 cargo run -p lar -- store remove org.example.editor 0.1.0
+cargo run -p lar -- resolve
 cargo run -p lar -- config
 ```
 
-See [docs/package-format.md](docs/package-format.md) for the `package.toml` and `.lar` format, and [docs/sxs-store.md](docs/sxs-store.md) for the local package store.
+See [docs/package-format.md](docs/package-format.md) for the `package.toml` and `.lar` format, [docs/sxs-store.md](docs/sxs-store.md) for the local package store, and [docs/resolve-lockfile.md](docs/resolve-lockfile.md) for dependency resolution.
 
 Other commands are defined but not implemented yet.
 

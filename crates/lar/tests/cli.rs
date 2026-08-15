@@ -31,11 +31,14 @@ fn help_lists_core_commands() {
 
 #[test]
 fn unimplemented_commands_are_stubbed() {
-    let output = lar().args(["resolve"]).output().expect("failed to run lar");
+    let output = lar()
+        .args(["runtime", "build", "org.example.app"])
+        .output()
+        .expect("failed to run lar");
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("lar resolve: not implemented yet"),
+        stderr.contains("lar runtime build: not implemented yet"),
         "{stderr}"
     );
 }
@@ -122,6 +125,215 @@ fn store_add_and_list() {
     let cfg = String::from_utf8_lossy(&config.stdout);
     assert!(cfg.contains("prefix"), "{cfg}");
     assert!(cfg.contains("store"), "{cfg}");
+}
+
+#[test]
+fn resolve_writes_lockfile() {
+    let dir = tempdir().unwrap();
+    let prefix = dir.path().join("prefix");
+
+    let lib = dir.path().join("lib");
+    let init_lib = lar()
+        .args([
+            "package",
+            "init",
+            "--id",
+            "org.example.lib",
+            "--name",
+            "Lib",
+            "--version",
+            "1.0.0",
+        ])
+        .arg(&lib)
+        .output()
+        .unwrap();
+    assert!(init_lib.status.success());
+    fs::write(lib.join("files/lib.txt"), b"lib").unwrap();
+    let pack_lib = lar().args(["package", "pack"]).arg(&lib).output().unwrap();
+    assert!(pack_lib.status.success());
+    let add_lib = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["store", "add"])
+        .arg(lib.join("org.example.lib-1.0.0.lar"))
+        .output()
+        .unwrap();
+    assert!(
+        add_lib.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&add_lib.stderr)
+    );
+
+    let app = dir.path().join("app");
+    let init_app = lar()
+        .args([
+            "package",
+            "init",
+            "--id",
+            "org.example.app",
+            "--name",
+            "App",
+        ])
+        .arg(&app)
+        .output()
+        .unwrap();
+    assert!(init_app.status.success());
+    let mut manifest = fs::read_to_string(app.join("package.toml")).unwrap();
+    manifest.push_str("\n[dependencies]\n\"org.example.lib\" = \"1.0.0\"\n");
+    fs::write(app.join("package.toml"), manifest).unwrap();
+
+    let resolve = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["resolve"])
+        .arg(&app)
+        .output()
+        .unwrap();
+    assert!(
+        resolve.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&resolve.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&resolve.stdout);
+    assert!(stdout.contains("org.example.app"), "{stdout}");
+    assert!(stdout.contains("lar.lock"), "{stdout}");
+
+    let lock = fs::read_to_string(app.join("lar.lock")).unwrap();
+    assert!(lock.contains("org.example.app"), "{lock}");
+    assert!(lock.contains("org.example.lib"), "{lock}");
+    assert!(lock.contains("blake3:"), "{lock}");
+}
+
+#[test]
+fn resolve_fails_when_dependency_missing() {
+    let dir = tempdir().unwrap();
+    let prefix = dir.path().join("prefix");
+    let app = dir.path().join("app");
+
+    let init = lar()
+        .args([
+            "package",
+            "init",
+            "--id",
+            "org.example.app",
+            "--name",
+            "App",
+        ])
+        .arg(&app)
+        .output()
+        .unwrap();
+    assert!(init.status.success());
+    let mut manifest = fs::read_to_string(app.join("package.toml")).unwrap();
+    manifest.push_str("\n[dependencies]\n\"org.example.lib\" = \"1.0.0\"\n");
+    fs::write(app.join("package.toml"), manifest).unwrap();
+
+    let resolve = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["resolve"])
+        .arg(&app)
+        .output()
+        .unwrap();
+    assert!(!resolve.status.success());
+    let stderr = String::from_utf8_lossy(&resolve.stderr);
+    assert!(
+        stderr.contains("not found in store") || stderr.contains("org.example.lib"),
+        "{stderr}"
+    );
+    assert!(!app.join("lar.lock").exists());
+}
+
+#[test]
+fn resolve_fails_on_version_conflict() {
+    let dir = tempdir().unwrap();
+    let prefix = dir.path().join("prefix");
+
+    for (id, version) in [
+        ("org.example.lib", "1.0.0"),
+        ("org.example.lib", "2.0.0"),
+        ("org.example.left", "1.0.0"),
+        ("org.example.right", "1.0.0"),
+    ] {
+        let pkg = dir.path().join(format!("{id}-{version}"));
+        let init = lar()
+            .args([
+                "package",
+                "init",
+                "--id",
+                id,
+                "--name",
+                id,
+                "--version",
+                version,
+            ])
+            .arg(&pkg)
+            .output()
+            .unwrap();
+        assert!(init.status.success());
+        fs::write(pkg.join("files/payload.txt"), format!("{id}-{version}")).unwrap();
+        if id == "org.example.left" {
+            let mut manifest = fs::read_to_string(pkg.join("package.toml")).unwrap();
+            manifest.push_str("\n[dependencies]\n\"org.example.lib\" = \"1.0.0\"\n");
+            fs::write(pkg.join("package.toml"), manifest).unwrap();
+        }
+        if id == "org.example.right" {
+            let mut manifest = fs::read_to_string(pkg.join("package.toml")).unwrap();
+            manifest.push_str("\n[dependencies]\n\"org.example.lib\" = \"2.0.0\"\n");
+            fs::write(pkg.join("package.toml"), manifest).unwrap();
+        }
+        let pack = lar().args(["package", "pack"]).arg(&pkg).output().unwrap();
+        assert!(
+            pack.status.success(),
+            "stderr={}",
+            String::from_utf8_lossy(&pack.stderr)
+        );
+        let add = lar()
+            .env("LAR_USER_PREFIX", &prefix)
+            .args(["store", "add"])
+            .arg(pkg.join(format!("{id}-{version}.lar")))
+            .output()
+            .unwrap();
+        assert!(
+            add.status.success(),
+            "stderr={}",
+            String::from_utf8_lossy(&add.stderr)
+        );
+    }
+
+    let app = dir.path().join("app");
+    let init_app = lar()
+        .args([
+            "package",
+            "init",
+            "--id",
+            "org.example.app",
+            "--name",
+            "App",
+        ])
+        .arg(&app)
+        .output()
+        .unwrap();
+    assert!(init_app.status.success());
+    let mut manifest = fs::read_to_string(app.join("package.toml")).unwrap();
+    manifest.push_str(
+        r#"
+[dependencies]
+"org.example.left" = "1.0.0"
+"org.example.right" = "1.0.0"
+"#,
+    );
+    fs::write(app.join("package.toml"), manifest).unwrap();
+
+    let resolve = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["resolve"])
+        .arg(&app)
+        .output()
+        .unwrap();
+    assert!(!resolve.status.success());
+    let stderr = String::from_utf8_lossy(&resolve.stderr);
+    assert!(
+        stderr.contains("conflict") || stderr.contains("org.example.lib"),
+        "{stderr}"
+    );
+    assert!(!app.join("lar.lock").exists());
 }
 
 #[test]
