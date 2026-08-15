@@ -17,18 +17,21 @@ cargo run -p lar -- package init --id org.example.editor --name "Example Editor"
 cargo run -p lar -- package validate
 cargo run -p lar -- package pack
 cargo run -p lar -- package inspect org.example.editor-0.1.0.lar
+cargo run -p lar -- package keygen --out ./keys
 cargo run -p lar -- store add org.example.editor-0.1.0.lar
 cargo run -p lar -- store list
 cargo run -p lar -- store remove org.example.editor 0.1.0
 cargo run -p lar -- resolve
 cargo run -p lar -- runtime build
 cargo run -p lar -- run
+cargo run -p lar -- repo add --main /path/to/repo
+cargo run -p lar -- audit
 cargo run -p lar -- config
 ```
 
-See [docs/](docs/) for the documentation index: [proposal](docs/proposal.md), [design](docs/design/), and [implementation](docs/implementation/) (package format, SxS store, resolve/lockfile, runtime).
+See [docs/](docs/) for the documentation index: [proposal](docs/proposal.md), [design](docs/design/), and [implementation](docs/implementation/) (package format, SxS store, resolve/lockfile, runtime, install, repos).
 
-Other commands are defined but not implemented yet.
+`lar update` and `lar rollback` are defined but not implemented yet.
 
 ## Build
 

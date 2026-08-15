@@ -9,6 +9,7 @@ rust-version.workspace = true
 
 [dependencies]
 lar-package.workspace = true
+lar-repo.workspace = true
 lar-store.workspace = true
 serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true

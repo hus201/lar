@@ -1,6 +1,6 @@
 # Platform Boundary, Security, and Updates
 
-**Status:** Partial — content hashes and install records (`lar install` / `uninstall` / `list`) are implemented; package signatures, update/rollback product flows, and OS integration policy remain planned — [install.md](../implementation/install.md)
+**Status:** Partial — content hashes, package signatures (repo fetch), advisories/`lar audit`, and install records are implemented; update/rollback product flows and OS integration policy remain planned — [repos.md](../implementation/repos.md), [install.md](../implementation/install.md)
 
 ## Operating System Boundary
 
@@ -24,9 +24,10 @@ LAR owns:
 
 LAR provides package integrity through:
 
-- Package signatures.
+- Package signatures (Ed25519 over `content_hash` for repo fetch).
 - Content hashes.
 - Metadata verification.
+- Repo-published vulnerability advisories (warnings; refuse yank on new fetch).
 
 LAR does not define a mandatory security isolation model.
 
@@ -35,6 +36,8 @@ Application security continues using Linux mechanisms:
 - User permissions.
 - File permissions.
 - Linux security frameworks.
+
+SxS keeps legacy `(id, version)` trees on disk until the user removes them. LAR surfaces advisory risk; it does not silently delete store packages.
 
 ## Update Model
 

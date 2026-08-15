@@ -259,19 +259,80 @@ fn ensure_root(store: &Store, source: &InstallSource) -> Result<StoredPackage> {
 
 fn lookup_store_root(store: &Store, id: &str, version: Option<&str>) -> Result<StoredPackage> {
     if let Some(version) = version {
-        return store.get(id, version)?.ok_or_else(|| Error::NotInStore {
-            id: id.to_string(),
-            version: version.to_string(),
+        if let Some(stored) = store.get(id, version)? {
+            lar_repo::emit_store_hit_warnings(
+                store,
+                id,
+                version,
+                Some(&stored.content_hash),
+                &mut std::io::stderr(),
+            )?;
+            return Ok(stored);
+        }
+        return lar_repo::fetch_into_store(
+            store,
+            id,
+            version,
+            lar_repo::LookupMode::Apps,
+            &mut std::io::stderr(),
+        )
+        .map_err(|err| match err {
+            lar_repo::Error::PackageNotFound { id, version } => Error::NotInStore { id, version },
+            other => other.into(),
         });
     }
 
     let matches: Vec<_> = store.list()?.into_iter().filter(|p| p.id == id).collect();
     match matches.len() {
-        0 => Err(Error::NotInStore {
-            id: id.to_string(),
-            version: "*".into(),
-        }),
-        1 => Ok(matches.into_iter().next().unwrap()),
+        0 => {
+            // Try to discover a unique version from apps sources by scanning indexes.
+            let sources = lar_repo::load_sources(store)?;
+            let mut found: Vec<(String, String)> = Vec::new();
+            for src in lar_repo::ordered_apps_sources(&sources) {
+                let Ok(base) = lar_repo::parse_uri(&src.uri) else {
+                    continue;
+                };
+                let Ok(index) = lar_repo::read_index(&base) else {
+                    continue;
+                };
+                for pkg in &index.packages {
+                    if pkg.id == id {
+                        found.push((pkg.version.clone(), src.name.clone()));
+                    }
+                }
+            }
+            found.sort();
+            found.dedup_by(|a, b| a.0 == b.0);
+            match found.len() {
+                0 => Err(Error::NotInStore {
+                    id: id.to_string(),
+                    version: "*".into(),
+                }),
+                1 => lookup_store_root(store, id, Some(&found[0].0)),
+                _ => {
+                    let versions = found
+                        .iter()
+                        .map(|(v, _)| v.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    Err(Error::AmbiguousVersion {
+                        id: id.to_string(),
+                        versions,
+                    })
+                }
+            }
+        }
+        1 => {
+            let stored = matches.into_iter().next().unwrap();
+            lar_repo::emit_store_hit_warnings(
+                store,
+                &stored.id,
+                &stored.version,
+                Some(&stored.content_hash),
+                &mut std::io::stderr(),
+            )?;
+            Ok(stored)
+        }
         _ => {
             let versions = matches
                 .iter()

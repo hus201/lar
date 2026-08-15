@@ -1,12 +1,12 @@
 # Architecture Overview
 
-**Status:** Partial — SxS store, resolver (lockfile), runtime, and install records are implemented; package sources (repos) and fetch are planned.
+**Status:** Partial — SxS store, resolver (lockfile), runtime, install records, and package sources (fetch/signatures/advisories) are implemented; version ranges and update/rollback remain planned.
 
 LAR consists of four major components.
 
 ## Package sources (repos)
 
-**Status:** Planned
+**Status:** Implemented (foundation) — [repos.md](../implementation/repos.md)
 
 A **package source** (CLI: `lar repo`) is a remote or local index that distributes LAR packages (`.lar` archives and metadata). There is a single source abstraction — not a separate “application repository” vs “package registry.”
 
@@ -15,8 +15,9 @@ That matches the package model: **one package kind**. Libraries, frameworks, and
 ### Responsibilities
 
 - Package distribution and metadata
-- Package versions and integrity (hashes; signatures later)
+- Package versions and integrity (content hashes and Ed25519 signatures)
 - Serving content for resolve-time fetch into the SxS store
+- Publishing vulnerability advisories / yank metadata (LAR warns; does not auto-purge)
 
 Sources are decentralized. Examples:
 
@@ -81,14 +82,14 @@ The SxS Store is the source of truth for packages present on the machine.
 
 ## Runtime Resolver
 
-**Status:** Partial — resolve/lockfile, runtime compose/`lar run`, and install records are implemented; version ranges, fetch from package sources, and desktop launch planned — [resolve-lockfile.md](../implementation/resolve-lockfile.md), [runtime.md](../implementation/runtime.md), [install.md](../implementation/install.md)
+**Status:** Partial — resolve/lockfile (including fetch from package sources), runtime compose/`lar run`, and install records are implemented; version ranges and desktop launch planned — [resolve-lockfile.md](../implementation/resolve-lockfile.md), [runtime.md](../implementation/runtime.md), [install.md](../implementation/install.md), [repos.md](../implementation/repos.md)
 
 Responsible for creating application execution environments.
 
 Responsibilities:
 
 - Read application manifests.
-- Resolve dependencies (store today; fetch from package sources later).
+- Resolve dependencies (store + fetch from package sources).
 - Select compatible package versions.
 - Create runtime environments.
 - Launch applications.

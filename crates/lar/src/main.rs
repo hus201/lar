@@ -1,15 +1,20 @@
 mod cli;
 
+use std::fs;
 use std::path::Path;
 use std::process::ExitCode;
 
 use clap::Parser;
 
-use cli::{Cli, Commands, PackageCmd, RepoCmd, RuntimeCmd, StoreCmd};
+use cli::{Cli, Commands, PackageCmd, RepoCmd, RuntimeCmd, StoreCmd, TrustCmd};
 use lar_manager::{
     install as install_app, list as list_installs, uninstall as uninstall_app, InstallSource,
 };
 use lar_package::{init_package, inspect, pack, validate_package, InitOptions};
+use lar_repo::{
+    add_source, audit, audit_should_fail, build_index, default_source_name, keygen, load_sources,
+    load_trust, remove_source, trust_add, trust_remove, write_index, AuditScope, SourcePolicy,
+};
 use lar_resolver::{lockfile_path_for_manifest, resolve, write_lockfile};
 use lar_runtime::{
     build as build_runtime, gc as gc_runtimes, inspect as inspect_runtime, list as list_runtimes,
@@ -76,6 +81,11 @@ fn run(system: bool, command: Commands) -> Result<ExitCode, String> {
             run_uninstall(system, &app)?;
             Ok(ExitCode::SUCCESS)
         }
+        Commands::Repo { command } => {
+            run_repo(system, command)?;
+            Ok(ExitCode::SUCCESS)
+        }
+        Commands::Audit { store, installed } => run_audit(system, store, installed),
         Commands::Config { json } => {
             run_config(system, json)?;
             Ok(ExitCode::SUCCESS)
@@ -303,6 +313,9 @@ fn run_config(system: bool, json: bool) -> Result<(), String> {
             "packages": paths.packages,
             "runtimes": paths.runtimes,
             "installs": paths.installs,
+            "config": paths.config,
+            "sources": paths.sources_toml(),
+            "trust": paths.trust_toml(),
         });
         println!(
             "{}",
@@ -315,8 +328,126 @@ fn run_config(system: bool, json: bool) -> Result<(), String> {
         println!("packages {}", paths.packages.display());
         println!("runtimes {}", paths.runtimes.display());
         println!("installs {}", paths.installs.display());
+        println!("config {}", paths.config.display());
+        println!("sources {}", paths.sources_toml().display());
+        println!("trust {}", paths.trust_toml().display());
     }
     Ok(())
+}
+
+fn run_repo(system: bool, command: RepoCmd) -> Result<(), String> {
+    let store = open_store(system);
+    match command {
+        RepoCmd::Add {
+            uri,
+            policy,
+            main,
+            name,
+        } => {
+            let policy = policy.unwrap_or_else(|| {
+                if main {
+                    "deps".into()
+                } else {
+                    "both".into()
+                }
+            });
+            let policy: SourcePolicy =
+                policy.parse().map_err(|e: lar_repo::Error| e.to_string())?;
+            let name = name.unwrap_or_else(|| default_source_name(&uri, main));
+            let entry = add_source(&store, name, uri, policy, main).map_err(|e| e.to_string())?;
+            let main_tag = if entry.main { " main" } else { "" };
+            println!(
+                "added {} {} ({}){main_tag}",
+                entry.name, entry.uri, entry.policy
+            );
+            Ok(())
+        }
+        RepoCmd::List => {
+            let file = load_sources(&store).map_err(|e| e.to_string())?;
+            for src in &file.sources {
+                let main_tag = if src.main { " main" } else { "" };
+                println!("{} {} ({}){main_tag}", src.name, src.uri, src.policy);
+            }
+            Ok(())
+        }
+        RepoCmd::Remove { source } => {
+            let entry = remove_source(&store, &source).map_err(|e| e.to_string())?;
+            println!("removed {} {}", entry.name, entry.uri);
+            Ok(())
+        }
+        RepoCmd::Index { dir, sign_key } => {
+            let secret = read_key_material(&sign_key)?;
+            let index = build_index(&dir, &secret).map_err(|e| e.to_string())?;
+            let path = write_index(&dir, &index).map_err(|e| e.to_string())?;
+            println!(
+                "wrote {} ({} packages)",
+                path.display(),
+                index.packages.len()
+            );
+            Ok(())
+        }
+        RepoCmd::Trust { command } => run_trust(system, command),
+    }
+}
+
+fn run_trust(system: bool, command: TrustCmd) -> Result<(), String> {
+    let store = open_store(system);
+    match command {
+        TrustCmd::Add { pubkey, comment } => {
+            let public = read_key_material(&pubkey)?;
+            let entry = trust_add(&store, &public, comment.unwrap_or_default())
+                .map_err(|e| e.to_string())?;
+            println!("trusted {} {}", entry.id, entry.public_key);
+            Ok(())
+        }
+        TrustCmd::List => {
+            let file = load_trust(&store).map_err(|e| e.to_string())?;
+            for key in &file.keys {
+                if key.comment.is_empty() {
+                    println!("{} {}", key.id, key.public_key);
+                } else {
+                    println!("{} {} ({})", key.id, key.public_key, key.comment);
+                }
+            }
+            Ok(())
+        }
+        TrustCmd::Remove { key_id } => {
+            let entry = trust_remove(&store, &key_id).map_err(|e| e.to_string())?;
+            println!("removed {}", entry.id);
+            Ok(())
+        }
+    }
+}
+
+fn run_audit(system: bool, store_scope: bool, _installed: bool) -> Result<ExitCode, String> {
+    let store = open_store(system);
+    let scope = if store_scope {
+        AuditScope::Store
+    } else {
+        AuditScope::Installed
+    };
+    let mut out = Vec::new();
+    let findings = audit(&store, scope, &mut out).map_err(|e| e.to_string())?;
+    print!("{}", String::from_utf8_lossy(&out));
+    if findings.is_empty() {
+        println!("ok: no advisories matched");
+    }
+    if audit_should_fail(&findings) {
+        Ok(ExitCode::FAILURE)
+    } else {
+        Ok(ExitCode::SUCCESS)
+    }
+}
+
+/// Read a key from a file path, or return the input if it looks like inline `base64:…`.
+fn read_key_material(input: &str) -> Result<String, String> {
+    let path = Path::new(input);
+    if path.is_file() {
+        let text = fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        Ok(text.trim().to_string())
+    } else {
+        Ok(input.to_string())
+    }
 }
 
 fn run_package(command: PackageCmd) -> Result<(), String> {
@@ -406,6 +537,22 @@ fn run_package(command: PackageCmd) -> Result<(), String> {
             }
             Ok(())
         }
+        PackageCmd::Keygen { out } => {
+            let (public, secret, id) = keygen().map_err(|e| e.to_string())?;
+            fs::create_dir_all(&out).map_err(|e| format!("{}: {e}", out.display()))?;
+            let pub_path = out.join("ed25519.pub");
+            let sec_path = out.join("ed25519.sec");
+            fs::write(&pub_path, format!("{public}\n"))
+                .map_err(|e| format!("{}: {e}", pub_path.display()))?;
+            fs::write(&sec_path, format!("{secret}\n"))
+                .map_err(|e| format!("{}: {e}", sec_path.display()))?;
+            println!(
+                "wrote {} and {} ({id})",
+                pub_path.display(),
+                sec_path.display()
+            );
+            Ok(())
+        }
     }
 }
 
@@ -441,6 +588,7 @@ fn command_name(command: &Commands) -> &'static str {
             PackageCmd::Validate { .. } => "lar package validate",
             PackageCmd::Pack { .. } => "lar package pack",
             PackageCmd::Inspect { .. } => "lar package inspect",
+            PackageCmd::Keygen { .. } => "lar package keygen",
         },
         Commands::Store { command } => match command {
             StoreCmd::Add { .. } => "lar store add",
@@ -464,7 +612,14 @@ fn command_name(command: &Commands) -> &'static str {
             RepoCmd::Add { .. } => "lar repo add",
             RepoCmd::List => "lar repo list",
             RepoCmd::Remove { .. } => "lar repo remove",
+            RepoCmd::Index { .. } => "lar repo index",
+            RepoCmd::Trust { command } => match command {
+                TrustCmd::Add { .. } => "lar repo trust add",
+                TrustCmd::List => "lar repo trust list",
+                TrustCmd::Remove { .. } => "lar repo trust remove",
+            },
         },
+        Commands::Audit { .. } => "lar audit",
         Commands::Config { .. } => "lar config",
     }
 }

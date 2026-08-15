@@ -54,9 +54,9 @@ pub enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Install an application from a local .lar or the store
+    /// Install an application from a local .lar, the store, or an apps source
     Install {
-        /// Path to a `.lar`, or a store package `id` / `id@version`
+        /// Path to a `.lar`, or a package `id` / `id@version`
         app: String,
         /// How to materialize package files into the runtime
         #[arg(long, default_value = "symlink", value_parser = ["symlink", "hardlink", "copy"])]
@@ -86,6 +86,15 @@ pub enum Commands {
     Repo {
         #[command(subcommand)]
         command: RepoCmd,
+    },
+    /// Audit packages against repo vulnerability advisories
+    Audit {
+        /// Scan every package in the SxS store
+        #[arg(long)]
+        store: bool,
+        /// Scan pins from install records (default)
+        #[arg(long)]
+        installed: bool,
     },
     /// Print resolved configuration and store paths
     Config {
@@ -137,6 +146,12 @@ pub enum PackageCmd {
         /// Emit JSON instead of text
         #[arg(long)]
         json: bool,
+    },
+    /// Generate an Ed25519 keypair for signing package indexes
+    Keygen {
+        /// Directory to write ed25519.pub / ed25519.sec
+        #[arg(long, default_value = ".")]
+        out: PathBuf,
     },
 }
 
@@ -194,17 +209,52 @@ pub enum RuntimeCmd {
 pub enum RepoCmd {
     /// Add a package source
     Add {
-        /// Source URL
-        url: String,
+        /// Local path or http(s) base URI
+        uri: String,
         /// What this source may provide: deps only, apps only, or both
-        #[arg(long, value_parser = ["deps", "apps", "both"], default_value = "both")]
-        policy: String,
+        /// (default: deps with --main, otherwise both)
+        #[arg(long, value_parser = ["deps", "apps", "both"])]
+        policy: Option<String>,
+        /// Mark as the main dependency source (unique; default policy deps)
+        #[arg(long)]
+        main: bool,
+        /// Source name (default: main if --main, else basename/host)
+        #[arg(long)]
+        name: Option<String>,
     },
     /// List configured package sources
     List,
     /// Remove a configured package source
     Remove {
-        /// Source URL or name
+        /// Source name or URI
         source: String,
     },
+    /// Write index.toml for a local repo directory (signed)
+    Index {
+        /// Directory containing .lar packages (and optional packages/)
+        dir: PathBuf,
+        /// Path to Ed25519 secret key file or inline `base64:…` key
+        #[arg(long)]
+        sign_key: String,
+    },
+    /// Manage trusted publisher public keys
+    Trust {
+        #[command(subcommand)]
+        command: TrustCmd,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum TrustCmd {
+    /// Trust a publisher public key
+    Add {
+        /// Path to pubkey file or `base64:…` string
+        pubkey: String,
+        #[arg(long)]
+        comment: Option<String>,
+    },
+    /// List trusted keys
+    List,
+    /// Remove a trusted key by id
+    Remove { key_id: String },
 }

@@ -47,6 +47,9 @@ pub enum Error {
     #[error(transparent)]
     Store(#[from] lar_store::Error),
 
+    #[error(transparent)]
+    Repo(#[from] lar_repo::Error),
+
     #[error("IO error at {}: {source}", .path.display())]
     Io {
         path: PathBuf,

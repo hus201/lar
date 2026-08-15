@@ -38,6 +38,7 @@ fn help_lists_core_commands() {
         "rollback",
         "uninstall",
         "repo",
+        "audit",
         "config",
     ] {
         assert!(stdout.contains(cmd), "missing {cmd} in --help:\n{stdout}");
@@ -126,6 +127,8 @@ fn store_add_and_list() {
     let cfg = String::from_utf8_lossy(&config.stdout);
     assert!(cfg.contains("prefix"), "{cfg}");
     assert!(cfg.contains("store"), "{cfg}");
+    assert!(cfg.contains("config"), "{cfg}");
+    assert!(cfg.contains("sources"), "{cfg}");
 }
 
 #[test]
@@ -956,3 +959,407 @@ binaries = ["bin/editor"]
     assert!(stdout.contains("org.example.editor"), "{stdout}");
     assert!(stdout.contains("blake3:"), "{stdout}");
 }
+
+#[test]
+fn repo_fetch_resolve_advisory_and_audit() {
+    let dir = tempdir().unwrap();
+    let prefix = dir.path().join("prefix");
+    let keys = dir.path().join("keys");
+    let repo = dir.path().join("repo");
+    fs::create_dir_all(repo.join("packages")).unwrap();
+
+    let keygen = lar()
+        .args(["package", "keygen", "--out"])
+        .arg(&keys)
+        .output()
+        .unwrap();
+    assert!(
+        keygen.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&keygen.stderr)
+    );
+
+    let trust = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["repo", "trust", "add"])
+        .arg(keys.join("ed25519.pub"))
+        .args(["--comment", "test"])
+        .output()
+        .unwrap();
+    assert!(
+        trust.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&trust.stderr)
+    );
+
+    let lib = dir.path().join("lib");
+    assert!(lar()
+        .args([
+            "package",
+            "init",
+            "--id",
+            "org.example.lib",
+            "--name",
+            "Lib",
+            "--version",
+            "1.0.0",
+        ])
+        .arg(&lib)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    fs::write(lib.join("files/lib.txt"), b"lib").unwrap();
+    assert!(lar()
+        .args(["package", "pack"])
+        .arg(&lib)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    fs::copy(
+        lib.join("org.example.lib-1.0.0.lar"),
+        repo.join("packages/org.example.lib-1.0.0.lar"),
+    )
+    .unwrap();
+
+    let index = lar()
+        .args(["repo", "index"])
+        .arg(&repo)
+        .args(["--sign-key"])
+        .arg(keys.join("ed25519.sec"))
+        .output()
+        .unwrap();
+    assert!(
+        index.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&index.stderr)
+    );
+
+    fs::write(
+        repo.join("advisories.toml"),
+        r#"
+format = 1
+
+[[advisories]]
+id = "LAR-2026-0099"
+package_id = "org.example.lib"
+versions = ["1.0.0"]
+severity = "medium"
+yanked = false
+summary = "Test advisory"
+url = "https://example.test/LAR-2026-0099"
+"#,
+    )
+    .unwrap();
+
+    let add = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["repo", "add", "--main"])
+        .arg(&repo)
+        .output()
+        .unwrap();
+    assert!(
+        add.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&add.stderr)
+    );
+    let add_out = String::from_utf8_lossy(&add.stdout);
+    assert!(
+        add_out.contains("(deps)") && add_out.contains("main"),
+        "expected deps main default, got {add_out}"
+    );
+
+    let app = dir.path().join("app");
+    assert!(lar()
+        .args([
+            "package",
+            "init",
+            "--id",
+            "org.example.app",
+            "--name",
+            "App",
+        ])
+        .arg(&app)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    let mut manifest = fs::read_to_string(app.join("package.toml")).unwrap();
+    manifest.push_str("\n[dependencies]\n\"org.example.lib\" = \"1.0.0\"\n");
+    fs::write(app.join("package.toml"), manifest).unwrap();
+
+    let resolve = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["resolve"])
+        .arg(&app)
+        .output()
+        .unwrap();
+    assert!(
+        resolve.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&resolve.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&resolve.stderr);
+    assert!(
+        stderr.contains("LAR-2026-0099") || stderr.contains("Test advisory"),
+        "expected advisory warning, stderr={stderr}"
+    );
+
+    let list = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["store", "list"])
+        .output()
+        .unwrap();
+    assert!(list.status.success());
+    assert!(
+        String::from_utf8_lossy(&list.stdout).contains("org.example.lib"),
+        "{}",
+        String::from_utf8_lossy(&list.stdout)
+    );
+
+    // Yank for audit of store packages
+    fs::write(
+        repo.join("advisories.toml"),
+        r#"
+format = 1
+
+[[advisories]]
+id = "LAR-2026-0100"
+package_id = "org.example.lib"
+versions = ["1.0.0"]
+severity = "high"
+yanked = true
+summary = "Yanked after ship"
+"#,
+    )
+    .unwrap();
+
+    let audit = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["audit", "--store"])
+        .output()
+        .unwrap();
+    assert!(!audit.status.success(), "audit should fail on high/yanked");
+    let audit_out = format!(
+        "{}{}",
+        String::from_utf8_lossy(&audit.stdout),
+        String::from_utf8_lossy(&audit.stderr)
+    );
+    assert!(audit_out.contains("LAR-2026-0100"), "{audit_out}");
+
+    // New fetch of yanked pin must refuse
+    let prefix2 = dir.path().join("prefix2");
+    assert!(lar()
+        .env("LAR_USER_PREFIX", &prefix2)
+        .args(["repo", "trust", "add"])
+        .arg(keys.join("ed25519.pub"))
+        .output()
+        .unwrap()
+        .status
+        .success());
+    assert!(lar()
+        .env("LAR_USER_PREFIX", &prefix2)
+        .args(["repo", "add", "--main"])
+        .arg(&repo)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    let app2 = dir.path().join("app2");
+    assert!(lar()
+        .args([
+            "package",
+            "init",
+            "--id",
+            "org.example.app2",
+            "--name",
+            "App2",
+        ])
+        .arg(&app2)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    let mut m2 = fs::read_to_string(app2.join("package.toml")).unwrap();
+    m2.push_str("\n[dependencies]\n\"org.example.lib\" = \"1.0.0\"\n");
+    fs::write(app2.join("package.toml"), m2).unwrap();
+    let resolve_yanked = lar()
+        .env("LAR_USER_PREFIX", &prefix2)
+        .args(["resolve"])
+        .arg(&app2)
+        .output()
+        .unwrap();
+    assert!(!resolve_yanked.status.success());
+    let err = String::from_utf8_lossy(&resolve_yanked.stderr);
+    assert!(err.contains("yanked"), "{err}");
+}
+
+#[test]
+fn install_from_apps_source() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempdir().unwrap();
+    let prefix = dir.path().join("prefix");
+    let keys = dir.path().join("keys");
+    let repo = dir.path().join("repo");
+    fs::create_dir_all(repo.join("packages")).unwrap();
+
+    assert!(lar()
+        .args(["package", "keygen", "--out"])
+        .arg(&keys)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    assert!(lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["repo", "trust", "add"])
+        .arg(keys.join("ed25519.pub"))
+        .output()
+        .unwrap()
+        .status
+        .success());
+
+    let app = dir.path().join("app");
+    assert!(lar()
+        .args([
+            "package",
+            "init",
+            "--id",
+            "org.example.vendorapp",
+            "--name",
+            "Vendor App",
+        ])
+        .arg(&app)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    let bin = app.join("files/bin");
+    fs::create_dir_all(&bin).unwrap();
+    let script = bin.join("app");
+    fs::write(&script, "#!/bin/sh\necho from-apps-source\n").unwrap();
+    let mut perms = fs::metadata(&script).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&script, perms).unwrap();
+    let mut manifest = fs::read_to_string(app.join("package.toml")).unwrap();
+    manifest.push_str(
+        r#"
+
+[entry]
+default = "bin/app"
+binaries = ["bin/app"]
+"#,
+    );
+    fs::write(app.join("package.toml"), manifest).unwrap();
+    assert!(lar()
+        .args(["package", "pack"])
+        .arg(&app)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    fs::copy(
+        app.join("org.example.vendorapp-0.1.0.lar"),
+        repo.join("packages/org.example.vendorapp-0.1.0.lar"),
+    )
+    .unwrap();
+
+    assert!(lar()
+        .args(["repo", "index"])
+        .arg(&repo)
+        .args(["--sign-key"])
+        .arg(keys.join("ed25519.sec"))
+        .output()
+        .unwrap()
+        .status
+        .success());
+
+    // deps-only main must not satisfy install-by-id
+    let deps_only = dir.path().join("deps-repo");
+    fs::create_dir_all(deps_only.join("packages")).unwrap();
+    fs::copy(
+        app.join("org.example.vendorapp-0.1.0.lar"),
+        deps_only.join("packages/org.example.vendorapp-0.1.0.lar"),
+    )
+    .unwrap();
+    assert!(lar()
+        .args(["repo", "index"])
+        .arg(&deps_only)
+        .args(["--sign-key"])
+        .arg(keys.join("ed25519.sec"))
+        .output()
+        .unwrap()
+        .status
+        .success());
+    assert!(lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["repo", "add", "--main"])
+        .arg(&deps_only)
+        .output()
+        .unwrap()
+        .status
+        .success());
+
+    let miss = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["install", "org.example.vendorapp"])
+        .output()
+        .unwrap();
+    assert!(
+        !miss.status.success(),
+        "deps-only main should not install apps"
+    );
+
+    let add_apps = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["repo", "add", "--policy", "apps", "--name", "vendor"])
+        .arg(&repo)
+        .output()
+        .unwrap();
+    assert!(
+        add_apps.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&add_apps.stderr)
+    );
+
+    let install = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["install", "org.example.vendorapp"])
+        .output()
+        .unwrap();
+    assert!(
+        install.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&install.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&install.stdout);
+    assert!(
+        stdout.contains("installed") && stdout.contains("org.example.vendorapp"),
+        "{stdout}"
+    );
+
+    let list = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["list"])
+        .output()
+        .unwrap();
+    assert!(list.status.success());
+    assert!(
+        String::from_utf8_lossy(&list.stdout).contains("org.example.vendorapp"),
+        "{}",
+        String::from_utf8_lossy(&list.stdout)
+    );
+
+    let store_list = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["store", "list"])
+        .output()
+        .unwrap();
+    assert!(
+        String::from_utf8_lossy(&store_list.stdout).contains("org.example.vendorapp"),
+        "app should be fetched into the store"
+    );
+}
+

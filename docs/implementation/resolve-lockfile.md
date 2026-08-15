@@ -1,16 +1,14 @@
 # LAR Resolve / Lockfile
 
-`lar resolve` turns a root `package.toml` into a deterministic `lar.lock` by walking exact dependency pins against the local SxS store. The lockfile is the input for runtime composition and install.
+`lar resolve` turns a root `package.toml` into a deterministic `lar.lock` by walking exact dependency pins against the local SxS store, fetching missing pins from configured package sources when needed. The lockfile is the input for runtime composition and install.
 
 ## Scope (v1)
 
 - Input: a local `package.toml` (or a directory containing it)
-- Dependency source: the local store only (no fetch from package sources yet)
+- Dependency source: local store, then package sources with `deps` (**main first**) — [repos.md](repos.md)
 - Versions: exact pins only (no ranges)
 - Root package: always included from the local manifest
-- Dependencies: must already exist in the store at the pinned version
-
-When fetch is implemented, missing exact pins are retrieved from configured package sources according to source policy: the default **main** source is dependency-only and is searched **first** among `deps` sources (see [architecture](../design/architecture.md)).
+- Dependencies: fetched into the store if missing (signature + hash + advisory checks)
 
 ## Algorithm
 
@@ -19,12 +17,13 @@ When fetch is implemented, missing exact pins are retrieved from configured pack
 3. For each `(id, version)`:
    - Same id already resolved at the same version → skip
    - Same id already resolved at a different version → conflict error
-   - Not in the store → missing error
+   - In the store → use it (emit advisory warnings if any)
+   - Missing → fetch from `deps` sources (main first); refuse yanked; warn on advisories
    - Load that package’s `package.toml` from the store and enqueue its deps
 4. Cycles are an error.
 5. Write `lar.lock` next to the root `package.toml`.
 
-(No fetch from package sources and no version ranges in the current implementation.)
+(No version ranges in the current implementation.)
 
 ## Lockfile format (`lar.lock`)
 
@@ -86,4 +85,5 @@ This is intended for runtime composition and tooling that must refuse a stale lo
 - Runtime: [runtime.md](runtime.md)
 - Install: [install.md](install.md)
 - Design (package sources): [architecture.md](../design/architecture.md)
+- Implementation (repos): [repos.md](repos.md)
 - Design: [Dependency resolution](../design/dependency-resolution.md)

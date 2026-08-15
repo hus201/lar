@@ -15,6 +15,7 @@ pub struct Paths {
     pub packages: PathBuf,
     pub runtimes: PathBuf,
     pub installs: PathBuf,
+    pub config: PathBuf,
     pub system: bool,
 }
 
@@ -25,14 +26,26 @@ impl Paths {
         let packages = store.join("packages");
         let runtimes = prefix.join("runtimes");
         let installs = prefix.join("installs");
+        let config = prefix.join("config");
         Self {
             prefix,
             store,
             packages,
             runtimes,
             installs,
+            config,
             system,
         }
+    }
+
+    /// Path to configured package sources.
+    pub fn sources_toml(&self) -> PathBuf {
+        self.config.join("sources.toml")
+    }
+
+    /// Path to trusted publisher public keys.
+    pub fn trust_toml(&self) -> PathBuf {
+        self.config.join("trust.toml")
     }
 }
 
@@ -73,5 +86,14 @@ mod tests {
         );
         assert_eq!(paths.runtimes, PathBuf::from("/tmp/lar-test/runtimes"));
         assert_eq!(paths.installs, PathBuf::from("/tmp/lar-test/installs"));
+        assert_eq!(paths.config, PathBuf::from("/tmp/lar-test/config"));
+        assert_eq!(
+            paths.sources_toml(),
+            PathBuf::from("/tmp/lar-test/config/sources.toml")
+        );
+        assert_eq!(
+            paths.trust_toml(),
+            PathBuf::from("/tmp/lar-test/config/trust.toml")
+        );
     }
 }

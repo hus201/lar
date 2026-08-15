@@ -9,3 +9,4 @@ These documents describe shipped (or actively implemented) formats and subsystem
 | [resolve-lockfile.md](resolve-lockfile.md) | `lar resolve` and `lar.lock` |
 | [runtime.md](runtime.md) | Runtime compose, list, inspect, gc, and `lar run` |
 | [install.md](install.md) | Install records via `lar-manager` (`lar install` / `list` / `uninstall`) |
+| [repos.md](repos.md) | Package sources, signatures, advisories, `lar audit` |

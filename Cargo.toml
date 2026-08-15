@@ -7,6 +7,7 @@ members = [
     "crates/lar-resolver",
     "crates/lar-runtime",
     "crates/lar-manager",
+    "crates/lar-repo",
 ]
 
 [workspace.package]
@@ -24,7 +25,13 @@ lar-package = { path = "crates/lar-package" }
 lar-resolver = { path = "crates/lar-resolver" }
 lar-runtime = { path = "crates/lar-runtime" }
 lar-manager = { path = "crates/lar-manager" }
+lar-repo = { path = "crates/lar-repo" }
 lar-store = { path = "crates/lar-store" }
+base64 = "0.22"
+ed25519-dalek = { version = "2.1", features = ["rand_core"] }
+rand = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+url = "2.5"
 semver = "1.0"
 serde = "1.0"
 serde_json = "1.0"

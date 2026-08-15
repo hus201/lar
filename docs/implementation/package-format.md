@@ -135,7 +135,7 @@ File paths are relative to `files/`. The future SxS store can index this without
 - `lar package pack` writes `content_hash` into both the staged `package.toml` and the copy inside the `.lar` archive.
 - Reading a `.lar` (via `inspect`) re-hashes every payload file and checks digests, sizes, file set, and `content_hash` against `manifest.json` / `package.toml`.
 - Extracting a `.lar` verifies the archive, writes files, then re-hashes the on-disk `files/` tree before succeeding (failed verify removes the destination).
-- Cryptographic package signatures are reserved for a later security milestone.
+- Cryptographic package signatures for **repo fetch** are Ed25519 over `content_hash` (recorded in `index.toml`); see [repos.md](repos.md). Direct `lar store add` remains unsigned-OK.
 
 ## Validation rules (v1)
 

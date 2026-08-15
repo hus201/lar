@@ -105,10 +105,29 @@ impl<'a> ResolveCtx<'a> {
             });
         }
 
-        let stored = self.store.get(id, version)?.ok_or_else(|| Error::Missing {
-            id: id.to_string(),
-            version: version.to_string(),
-        })?;
+        let stored = match self.store.get(id, version)? {
+            Some(existing) => {
+                lar_repo::emit_store_hit_warnings(
+                    self.store,
+                    id,
+                    version,
+                    Some(&existing.content_hash),
+                    &mut std::io::stderr(),
+                )?;
+                existing
+            }
+            None => lar_repo::fetch_into_store(
+                self.store,
+                id,
+                version,
+                lar_repo::LookupMode::Deps,
+                &mut std::io::stderr(),
+            )
+            .map_err(|err| match err {
+                lar_repo::Error::PackageNotFound { id, version } => Error::Missing { id, version },
+                other => other.into(),
+            })?,
+        };
 
         let dep_manifest = load_manifest(&stored.path.join("package.toml"))?;
         if dep_manifest.package.id != id || dep_manifest.package.version != version {
