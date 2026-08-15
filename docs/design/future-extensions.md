@@ -4,7 +4,6 @@
 
 Possible future features:
 
-- Runtime garbage collection.
 - Developer SDK.
 - Enterprise package registries.
 - Build system integration.

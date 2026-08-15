@@ -56,7 +56,7 @@ The SxS Store is the source of truth for installed packages.
 
 ## Runtime Resolver
 
-**Status:** Partial — dependency resolve + `lar.lock` implemented; runtime creation and launch planned — [resolve-lockfile.md](../implementation/resolve-lockfile.md)
+**Status:** Partial — resolve/lockfile, symlink runtime compose, and `lar run` implemented; version ranges, fetch, and desktop launch planned — [resolve-lockfile.md](../implementation/resolve-lockfile.md), [runtime.md](../implementation/runtime.md)
 
 Responsible for creating application execution environments.
 

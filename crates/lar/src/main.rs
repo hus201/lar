@@ -8,13 +8,17 @@ use clap::Parser;
 use cli::{Cli, Commands, PackageCmd, RepoCmd, RuntimeCmd, StoreCmd};
 use lar_package::{init_package, inspect, pack, validate_package, InitOptions};
 use lar_resolver::{lockfile_path_for_manifest, resolve, write_lockfile};
+use lar_runtime::{
+    build as build_runtime, gc as gc_runtimes, inspect as inspect_runtime, list as list_runtimes,
+    run as run_app, ComposeMode,
+};
 use lar_store::{prefix, Paths, Store};
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
 
     match run(cli.system, cli.command) {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(code) => code,
         Err(message) => {
             eprintln!("{message}");
             ExitCode::FAILURE
@@ -22,12 +26,38 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(system: bool, command: Commands) -> Result<(), String> {
+fn run(system: bool, command: Commands) -> Result<ExitCode, String> {
     match command {
-        Commands::Package { command } => run_package(command),
-        Commands::Store { command } => run_store(system, command),
-        Commands::Resolve { manifest } => run_resolve(system, &manifest),
-        Commands::Config { json } => run_config(system, json),
+        Commands::Package { command } => {
+            run_package(command)?;
+            Ok(ExitCode::SUCCESS)
+        }
+        Commands::Store { command } => {
+            run_store(system, command)?;
+            Ok(ExitCode::SUCCESS)
+        }
+        Commands::Resolve { manifest } => {
+            run_resolve(system, &manifest)?;
+            Ok(ExitCode::SUCCESS)
+        }
+        Commands::Runtime { command } => {
+            run_runtime(system, command)?;
+            Ok(ExitCode::SUCCESS)
+        }
+        Commands::Run {
+            lockfile,
+            compose,
+            args,
+        } => {
+            let compose: ComposeMode = compose
+                .parse()
+                .map_err(|e: lar_runtime::Error| e.to_string())?;
+            run_launch(system, &lockfile, compose, &args)
+        }
+        Commands::Config { json } => {
+            run_config(system, json)?;
+            Ok(ExitCode::SUCCESS)
+        }
         other => Err(format!("{}: not implemented yet", command_name(&other))),
     }
 }
@@ -35,6 +65,120 @@ fn run(system: bool, command: Commands) -> Result<(), String> {
 fn open_store(system: bool) -> Store {
     let paths = Paths::from_prefix(prefix(system), system);
     Store::open(paths)
+}
+
+fn run_runtime(system: bool, command: RuntimeCmd) -> Result<(), String> {
+    let store = open_store(system);
+    match command {
+        RuntimeCmd::Build { lockfile, compose } => {
+            let compose: ComposeMode = compose
+                .parse()
+                .map_err(|e: lar_runtime::Error| e.to_string())?;
+            let built = build_runtime(&lockfile, &store, compose).map_err(|err| err.to_string())?;
+            let action = if built.reused { "reused" } else { "built" };
+            println!(
+                "{action} {} {} ({}) -> {}",
+                built.meta.root.id,
+                built.meta.root.version,
+                built.meta.compose,
+                built.path.display()
+            );
+            Ok(())
+        }
+        RuntimeCmd::List => {
+            let runtimes = list_runtimes(&store).map_err(|err| err.to_string())?;
+            for rt in runtimes {
+                println!(
+                    "{} {} {} {} {}",
+                    rt.runtime_id,
+                    rt.meta.root.id,
+                    rt.meta.root.version,
+                    rt.meta.compose,
+                    rt.path.display()
+                );
+            }
+            Ok(())
+        }
+        RuntimeCmd::Gc { all } => {
+            let report = gc_runtimes(&store, all).map_err(|err| err.to_string())?;
+            for path in &report.orphans {
+                println!("removed orphan {}", path.display());
+            }
+            for rt in &report.removed {
+                println!(
+                    "removed {} {} {} ({})",
+                    rt.runtime_id, rt.meta.root.id, rt.meta.root.version, rt.meta.compose
+                );
+            }
+            if all {
+                println!(
+                    "gc removed {} runtime(s), {} orphan(s)",
+                    report.removed.len(),
+                    report.orphans.len()
+                );
+            } else {
+                println!(
+                    "gc removed {} broken runtime(s), {} orphan(s), kept {}",
+                    report.removed.len(),
+                    report.orphans.len(),
+                    report.kept
+                );
+            }
+            Ok(())
+        }
+        RuntimeCmd::Inspect { runtime, json } => {
+            let rt = inspect_runtime(&store, &runtime).map_err(|err| err.to_string())?;
+            if json {
+                let value = serde_json::json!({
+                    "format": rt.meta.format,
+                    "runtime_id": rt.meta.runtime_id,
+                    "compose": rt.meta.compose.as_str(),
+                    "path": rt.path,
+                    "root": {
+                        "id": rt.meta.root.id,
+                        "version": rt.meta.root.version,
+                    },
+                    "packages": rt.meta.packages.iter().map(|p| serde_json::json!({
+                        "id": p.id,
+                        "version": p.version,
+                        "content_hash": p.content_hash,
+                        "dependencies": p.dependencies,
+                    })).collect::<Vec<_>>(),
+                });
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?
+                );
+            } else {
+                println!(
+                    "{} {} (format {})",
+                    rt.meta.root.id, rt.meta.root.version, rt.meta.format
+                );
+                println!("runtime_id {}", rt.meta.runtime_id);
+                println!("compose {}", rt.meta.compose);
+                println!("path {}", rt.path.display());
+                println!("{} packages", rt.meta.packages.len());
+                for pkg in &rt.meta.packages {
+                    println!("  {} {} {}", pkg.id, pkg.version, pkg.content_hash);
+                }
+            }
+            Ok(())
+        }
+    }
+}
+
+fn run_launch(
+    system: bool,
+    lockfile: &Path,
+    compose: ComposeMode,
+    args: &[String],
+) -> Result<ExitCode, String> {
+    let store = open_store(system);
+    let status = run_app(lockfile, &store, compose, args).map_err(|err| err.to_string())?;
+    match status.code() {
+        Some(code) => Ok(ExitCode::from(code as u8)),
+        None => Ok(ExitCode::FAILURE),
+    }
 }
 
 fn run_resolve(system: bool, manifest: &Path) -> Result<(), String> {
@@ -94,6 +238,7 @@ fn run_config(system: bool, json: bool) -> Result<(), String> {
             "prefix": paths.prefix,
             "store": paths.store,
             "packages": paths.packages,
+            "runtimes": paths.runtimes,
         });
         println!(
             "{}",
@@ -104,6 +249,7 @@ fn run_config(system: bool, json: bool) -> Result<(), String> {
         println!("prefix {}", paths.prefix.display());
         println!("store {}", paths.store.display());
         println!("packages {}", paths.packages.display());
+        println!("runtimes {}", paths.runtimes.display());
     }
     Ok(())
 }
@@ -239,6 +385,9 @@ fn command_name(command: &Commands) -> &'static str {
         Commands::Resolve { .. } => "lar resolve",
         Commands::Runtime { command } => match command {
             RuntimeCmd::Build { .. } => "lar runtime build",
+            RuntimeCmd::List => "lar runtime list",
+            RuntimeCmd::Gc { .. } => "lar runtime gc",
+            RuntimeCmd::Inspect { .. } => "lar runtime inspect",
         },
         Commands::Run { .. } => "lar run",
         Commands::Install { .. } => "lar install",

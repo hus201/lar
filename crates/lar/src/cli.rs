@@ -44,8 +44,15 @@ pub enum Commands {
     },
     /// Launch an application using its resolved runtime (debug/admin)
     Run {
-        /// Application package id
-        app: String,
+        /// Path to lar.lock or a directory containing it
+        #[arg(default_value = ".")]
+        lockfile: PathBuf,
+        /// How to materialize package files into the runtime
+        #[arg(long, default_value = "symlink", value_parser = ["symlink", "hardlink", "copy"])]
+        compose: String,
+        /// Arguments forwarded to the application entry binary
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
     },
     /// Install an application from a repository or local package
     Install {
@@ -150,8 +157,28 @@ pub enum StoreCmd {
 pub enum RuntimeCmd {
     /// Compose a runtime environment from an application lockfile
     Build {
-        /// Application package id
-        app: String,
+        /// Path to lar.lock or a directory containing it
+        #[arg(default_value = ".")]
+        lockfile: PathBuf,
+        /// How to materialize package files into the runtime
+        #[arg(long, default_value = "symlink", value_parser = ["symlink", "hardlink", "copy"])]
+        compose: String,
+    },
+    /// List composed runtimes under the LAR prefix
+    List,
+    /// Remove unused or broken composed runtimes
+    Gc {
+        /// Remove every composed runtime (not only broken ones)
+        #[arg(long)]
+        all: bool,
+    },
+    /// Inspect a composed runtime by id or path
+    Inspect {
+        /// Runtime id or path to a runtime directory / runtime.toml
+        runtime: PathBuf,
+        /// Emit JSON instead of text
+        #[arg(long)]
+        json: bool,
     },
 }
 

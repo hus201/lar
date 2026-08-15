@@ -263,6 +263,7 @@ dependencies = [
  "clap",
  "lar-package",
  "lar-resolver",
+ "lar-runtime",
  "lar-store",
  "serde_json",
  "tempfile",
@@ -288,6 +289,20 @@ name = "lar-resolver"
 version = "0.1.0"
 dependencies = [
  "lar-package",
+ "lar-store",
+ "serde",
+ "tempfile",
+ "thiserror",
+ "toml",
+]
+
+[[package]]
+name = "lar-runtime"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "lar-package",
+ "lar-resolver",
  "lar-store",
  "serde",
  "tempfile",

@@ -188,7 +188,7 @@ pub fn extract(archive_path: &Path, dest: &Path) -> Result<PackageArchive> {
     })?;
 
     let files_root = dest.join("files");
-    for (rel, data) in &loaded.payload {
+    for (rel, (data, mode)) in &loaded.payload {
         let out_path = files_root.join(rel);
         if let Some(parent) = out_path.parent() {
             fs::create_dir_all(parent).map_err(|source| Error::Io {
@@ -197,9 +197,19 @@ pub fn extract(archive_path: &Path, dest: &Path) -> Result<PackageArchive> {
             })?;
         }
         fs::write(&out_path, data).map_err(|source| Error::Io {
-            path: out_path,
+            path: out_path.clone(),
             source,
         })?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&out_path, fs::Permissions::from_mode(*mode)).map_err(
+                |source| Error::Io {
+                    path: out_path.clone(),
+                    source,
+                },
+            )?;
+        }
     }
 
     let archive = PackageArchive {
@@ -239,7 +249,8 @@ fn load_payload_map(files_dir: &Path) -> Result<BTreeMap<String, Vec<u8>>> {
 struct VerifiedArchive {
     package_toml: String,
     manifest_json: Vec<u8>,
-    payload: BTreeMap<String, Vec<u8>>,
+    /// Relative path under `files/` -> (bytes, unix mode)
+    payload: BTreeMap<String, (Vec<u8>, u32)>,
     manifest: PackageManifest,
     index: ArchiveIndex,
 }
@@ -257,7 +268,7 @@ fn load_verified_archive(archive_path: &Path) -> Result<VerifiedArchive> {
 
     let mut package_toml = None;
     let mut manifest_json = None;
-    let mut payload: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    let mut payload: BTreeMap<String, (Vec<u8>, u32)> = BTreeMap::new();
 
     for entry in archive
         .entries()
@@ -307,11 +318,12 @@ fn load_verified_archive(archive_path: &Path) -> Result<VerifiedArchive> {
         }
 
         let rel = normalize_payload_rel_path(Path::new(rel))?;
+        let mode = entry.header().mode().unwrap_or(0o644);
         let mut buf = Vec::new();
         entry
             .read_to_end(&mut buf)
             .map_err(|source| Error::Archive(source.to_string()))?;
-        if payload.insert(rel.clone(), buf).is_some() {
+        if payload.insert(rel.clone(), (buf, mode)).is_some() {
             return Err(Error::Integrity(format!(
                 "duplicate payload path in archive: {rel}"
             )));
@@ -325,7 +337,11 @@ fn load_verified_archive(archive_path: &Path) -> Result<VerifiedArchive> {
 
     let manifest = parse_manifest(&package_toml)?;
     let index: ArchiveIndex = serde_json::from_slice(&manifest_json)?;
-    verify_archive_integrity(&manifest, &index, &payload)?;
+    let payload_bytes: BTreeMap<String, Vec<u8>> = payload
+        .iter()
+        .map(|(k, (data, _))| (k.clone(), data.clone()))
+        .collect();
+    verify_archive_integrity(&manifest, &index, &payload_bytes)?;
 
     Ok(VerifiedArchive {
         package_toml,

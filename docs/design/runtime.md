@@ -1,6 +1,6 @@
 # Runtime Model
 
-**Status:** Planned — linking and execution principles apply now; disposable runtime composition and `lar run` are not implemented yet.
+**Status:** Implemented — configurable compose modes, list/inspect/gc, and `lar run` — [runtime.md](../implementation/runtime.md)
 
 ## Side-by-Side Runtime
 
@@ -13,11 +13,11 @@ A runtime contains:
 - Runtime components.
 - Resources.
 
-Runtime construction may use:
+Runtime construction uses a configurable compose mode:
 
-- Symbolic links.
+- Symbolic links (default).
 - Hard links.
-- Filesystem composition techniques.
+- File copies.
 
 The runtime itself is disposable.
 

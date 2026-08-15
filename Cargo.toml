@@ -1,6 +1,12 @@
 [workspace]
 resolver = "2"
-members = ["crates/lar", "crates/lar-package", "crates/lar-store", "crates/lar-resolver"]
+members = [
+    "crates/lar",
+    "crates/lar-package",
+    "crates/lar-store",
+    "crates/lar-resolver",
+    "crates/lar-runtime",
+]
 
 [workspace.package]
 version = "0.1.0"
@@ -15,6 +21,7 @@ blake3 = "1.5"
 clap = { version = "4.5", features = ["derive"] }
 lar-package = { path = "crates/lar-package" }
 lar-resolver = { path = "crates/lar-resolver" }
+lar-runtime = { path = "crates/lar-runtime" }
 lar-store = { path = "crates/lar-store" }
 semver = "1.0"
 serde = "1.0"

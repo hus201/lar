@@ -11,7 +11,7 @@ pub use lockfile::{
     LockedPackage, Lockfile, LOCKFILE_FORMAT,
 };
 pub use resolve::{resolve, resolve_manifest};
-pub use verify::verify_lockfile;
+pub use verify::{verify_lockfile, verify_lockfile_ready};
 
 /// Result alias for this crate.
 pub type Result<T> = std::result::Result<T, Error>;

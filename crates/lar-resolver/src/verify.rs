@@ -13,15 +13,28 @@ use crate::Result;
 ///   `(id, version)` with the same hash.
 /// - Locked `dependencies` must match the stored package’s `[dependencies]`.
 pub fn verify_lockfile(lock: &Lockfile, store: &Store) -> Result<()> {
+    verify_lockfile_inner(lock, store, false)
+}
+
+/// Like [`verify_lockfile`], but the root package must also have a `content_hash`
+/// and be present in the store (required before runtime composition).
+pub fn verify_lockfile_ready(lock: &Lockfile, store: &Store) -> Result<()> {
+    verify_lockfile_inner(lock, store, true)
+}
+
+fn verify_lockfile_inner(
+    lock: &Lockfile,
+    store: &Store,
+    require_root_in_store: bool,
+) -> Result<()> {
     lock.validate()?;
 
     for pkg in &lock.packages {
         let is_root = pkg.id == lock.root.id && pkg.version == lock.root.version;
         let Some(expected_hash) = &pkg.content_hash else {
-            if is_root {
+            if is_root && !require_root_in_store {
                 continue;
             }
-            // validate() already rejects this; keep a clear error path.
             return Err(Error::InvalidLockfile(format!(
                 "package {} {} missing required content_hash",
                 pkg.id, pkg.version

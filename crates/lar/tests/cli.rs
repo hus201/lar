@@ -32,13 +32,13 @@ fn help_lists_core_commands() {
 #[test]
 fn unimplemented_commands_are_stubbed() {
     let output = lar()
-        .args(["runtime", "build", "org.example.app"])
+        .args(["install", "org.example.app"])
         .output()
         .expect("failed to run lar");
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("lar runtime build: not implemented yet"),
+        stderr.contains("lar install: not implemented yet"),
         "{stderr}"
     );
 }
@@ -200,6 +200,317 @@ fn resolve_writes_lockfile() {
     assert!(lock.contains("org.example.app"), "{lock}");
     assert!(lock.contains("org.example.lib"), "{lock}");
     assert!(lock.contains("blake3:"), "{lock}");
+}
+
+#[test]
+fn runtime_build_and_run() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempdir().unwrap();
+    let prefix = dir.path().join("prefix");
+
+    let lib = dir.path().join("lib");
+    assert!(lar()
+        .args([
+            "package",
+            "init",
+            "--id",
+            "org.example.lib",
+            "--name",
+            "Lib",
+            "--version",
+            "1.0.0",
+        ])
+        .arg(&lib)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    fs::write(lib.join("files/lib.txt"), b"lib").unwrap();
+    assert!(lar()
+        .args(["package", "pack"])
+        .arg(&lib)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    assert!(lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["store", "add"])
+        .arg(lib.join("org.example.lib-1.0.0.lar"))
+        .output()
+        .unwrap()
+        .status
+        .success());
+
+    let app = dir.path().join("app");
+    assert!(lar()
+        .args([
+            "package",
+            "init",
+            "--id",
+            "org.example.app",
+            "--name",
+            "App"
+        ])
+        .arg(&app)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    let bin = app.join("files/bin");
+    fs::create_dir_all(&bin).unwrap();
+    let script = bin.join("app");
+    fs::write(&script, "#!/bin/sh\necho hello-from-runtime\n").unwrap();
+    let mut perms = fs::metadata(&script).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&script, perms).unwrap();
+    let mut manifest = fs::read_to_string(app.join("package.toml")).unwrap();
+    manifest.push_str(
+        r#"
+[dependencies]
+"org.example.lib" = "1.0.0"
+
+[entry]
+default = "bin/app"
+binaries = ["bin/app"]
+"#,
+    );
+    fs::write(app.join("package.toml"), manifest).unwrap();
+    assert!(lar()
+        .args(["package", "pack"])
+        .arg(&app)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    assert!(lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["store", "add"])
+        .arg(app.join("org.example.app-0.1.0.lar"))
+        .output()
+        .unwrap()
+        .status
+        .success());
+
+    // Refresh local package.toml from pack (content_hash) and resolve.
+    assert!(lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["resolve"])
+        .arg(&app)
+        .output()
+        .unwrap()
+        .status
+        .success());
+
+    let build = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["runtime", "build"])
+        .arg(&app)
+        .output()
+        .unwrap();
+    assert!(
+        build.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&build.stdout);
+    assert!(
+        stdout.contains("built") || stdout.contains("reused"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("runtimes"), "{stdout}");
+
+    let run = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["run"])
+        .arg(&app)
+        .output()
+        .unwrap();
+    assert!(
+        run.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let run_out = String::from_utf8_lossy(&run.stdout);
+    assert!(run_out.contains("hello-from-runtime"), "{run_out}");
+
+    let list = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["runtime", "list"])
+        .output()
+        .unwrap();
+    assert!(list.status.success());
+    let list_out = String::from_utf8_lossy(&list.stdout);
+    assert!(list_out.contains("org.example.app"), "{list_out}");
+
+    let runtime_id = list_out.split_whitespace().next().unwrap();
+    let inspected = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["runtime", "inspect", "--json", runtime_id])
+        .output()
+        .unwrap();
+    assert!(
+        inspected.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&inspected.stderr)
+    );
+    let inspected_out = String::from_utf8_lossy(&inspected.stdout);
+    assert!(inspected_out.contains("runtime_id"), "{inspected_out}");
+    assert!(inspected_out.contains("org.example.app"), "{inspected_out}");
+
+    // Default gc keeps healthy runtimes.
+    let gc_keep = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["runtime", "gc"])
+        .output()
+        .unwrap();
+    assert!(
+        gc_keep.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&gc_keep.stderr)
+    );
+    let gc_keep_out = String::from_utf8_lossy(&gc_keep.stdout);
+    assert!(gc_keep_out.contains("kept 1"), "{gc_keep_out}");
+    assert!(gc_keep_out.contains("0 orphan(s)"), "{gc_keep_out}");
+
+    // Force-remove store packages, then default gc removes the broken runtime.
+    assert!(lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["store", "remove", "--force", "org.example.app", "0.1.0"])
+        .output()
+        .unwrap()
+        .status
+        .success());
+    assert!(lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["store", "remove", "--force", "org.example.lib", "1.0.0"])
+        .output()
+        .unwrap()
+        .status
+        .success());
+    let gc_broken = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["runtime", "gc"])
+        .output()
+        .unwrap();
+    assert!(
+        gc_broken.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&gc_broken.stderr)
+    );
+    let gc_broken_out = String::from_utf8_lossy(&gc_broken.stdout);
+    assert!(gc_broken_out.contains("removed"), "{gc_broken_out}");
+    assert!(gc_broken_out.contains("kept 0"), "{gc_broken_out}");
+    assert!(
+        gc_broken_out.contains("1 broken runtime(s), 0 orphan(s)"),
+        "{gc_broken_out}"
+    );
+
+    let list_after = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["runtime", "list"])
+        .output()
+        .unwrap();
+    assert!(list_after.status.success());
+    assert!(String::from_utf8_lossy(&list_after.stdout)
+        .trim()
+        .is_empty());
+}
+
+#[test]
+fn runtime_gc_all() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempdir().unwrap();
+    let prefix = dir.path().join("prefix");
+    let app = dir.path().join("app");
+
+    assert!(lar()
+        .args([
+            "package",
+            "init",
+            "--id",
+            "org.example.app",
+            "--name",
+            "App"
+        ])
+        .arg(&app)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    let bin = app.join("files/bin");
+    fs::create_dir_all(&bin).unwrap();
+    let script = bin.join("app");
+    fs::write(&script, "#!/bin/sh\necho ok\n").unwrap();
+    let mut perms = fs::metadata(&script).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&script, perms).unwrap();
+    let mut manifest = fs::read_to_string(app.join("package.toml")).unwrap();
+    manifest.push_str(
+        r#"
+[entry]
+default = "bin/app"
+binaries = ["bin/app"]
+"#,
+    );
+    fs::write(app.join("package.toml"), manifest).unwrap();
+    assert!(lar()
+        .args(["package", "pack"])
+        .arg(&app)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    assert!(lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["store", "add"])
+        .arg(app.join("org.example.app-0.1.0.lar"))
+        .output()
+        .unwrap()
+        .status
+        .success());
+    assert!(lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["resolve"])
+        .arg(&app)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    assert!(lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["runtime", "build"])
+        .arg(&app)
+        .output()
+        .unwrap()
+        .status
+        .success());
+
+    let gc = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["runtime", "gc", "--all"])
+        .output()
+        .unwrap();
+    assert!(
+        gc.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&gc.stderr)
+    );
+    let gc_out = String::from_utf8_lossy(&gc.stdout);
+    assert!(
+        gc_out.contains("gc removed 1 runtime(s), 0 orphan(s)"),
+        "{gc_out}"
+    );
+
+    let list = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["runtime", "list"])
+        .output()
+        .unwrap();
+    assert!(list.status.success());
+    assert!(String::from_utf8_lossy(&list.stdout).trim().is_empty());
 }
 
 #[test]

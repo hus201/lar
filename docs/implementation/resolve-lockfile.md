@@ -79,4 +79,5 @@ This is intended for runtime composition and tooling that must refuse a stale lo
 
 - Package format: [package-format.md](package-format.md)
 - SxS store: [sxs-store.md](sxs-store.md)
+- Runtime: [runtime.md](runtime.md)
 - Design: [Dependency resolution](../design/dependency-resolution.md)
