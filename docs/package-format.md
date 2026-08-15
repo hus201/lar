@@ -134,6 +134,7 @@ File paths are relative to `files/`. The future SxS store can index this without
 - `content_hash` is a BLAKE3 digest over the canonical payload inventory (sorted paths with per-file digests).
 - `lar package pack` writes `content_hash` into both the staged `package.toml` and the copy inside the `.lar` archive.
 - Reading a `.lar` (via `inspect`) re-hashes every payload file and checks digests, sizes, file set, and `content_hash` against `manifest.json` / `package.toml`.
+- Extracting a `.lar` verifies the archive, writes files, then re-hashes the on-disk `files/` tree before succeeding (failed verify removes the destination).
 - Cryptographic package signatures are reserved for a later security milestone.
 
 ## Validation rules (v1)

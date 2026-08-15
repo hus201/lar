@@ -153,6 +153,98 @@ pub fn pack(package_dir: &Path, output: &Path) -> Result<PackageArchive> {
 
 /// Read a `.lar` archive, re-hash payload files, and verify digests.
 pub fn inspect(archive_path: &Path) -> Result<PackageArchive> {
+    let loaded = load_verified_archive(archive_path)?;
+    Ok(PackageArchive {
+        manifest: loaded.manifest,
+        index: loaded.index,
+    })
+}
+
+/// Verify a `.lar` archive and extract it into `dest` (`package.toml`, `manifest.json`, `files/`).
+pub fn extract(archive_path: &Path, dest: &Path) -> Result<PackageArchive> {
+    let loaded = load_verified_archive(archive_path)?;
+
+    if dest.exists() {
+        return Err(Error::Validation(format!(
+            "extract destination already exists: {}",
+            dest.display()
+        )));
+    }
+    fs::create_dir_all(dest).map_err(|source| Error::Io {
+        path: dest.to_path_buf(),
+        source,
+    })?;
+
+    let package_toml_path = dest.join("package.toml");
+    fs::write(&package_toml_path, &loaded.package_toml).map_err(|source| Error::Io {
+        path: package_toml_path,
+        source,
+    })?;
+
+    let manifest_json_path = dest.join("manifest.json");
+    fs::write(&manifest_json_path, &loaded.manifest_json).map_err(|source| Error::Io {
+        path: manifest_json_path,
+        source,
+    })?;
+
+    let files_root = dest.join("files");
+    for (rel, data) in &loaded.payload {
+        let out_path = files_root.join(rel);
+        if let Some(parent) = out_path.parent() {
+            fs::create_dir_all(parent).map_err(|source| Error::Io {
+                path: parent.to_path_buf(),
+                source,
+            })?;
+        }
+        fs::write(&out_path, data).map_err(|source| Error::Io {
+            path: out_path,
+            source,
+        })?;
+    }
+
+    let archive = PackageArchive {
+        manifest: loaded.manifest,
+        index: loaded.index,
+    };
+    if let Err(err) = verify_package_dir(dest) {
+        let _ = fs::remove_dir_all(dest);
+        return Err(err);
+    }
+    Ok(archive)
+}
+
+/// Re-hash an on-disk package directory (`package.toml`, `manifest.json`, `files/`) and verify digests.
+pub fn verify_package_dir(dir: &Path) -> Result<PackageArchive> {
+    let manifest_path = dir.join("package.toml");
+    let manifest = load_manifest(&manifest_path)?;
+    let index_path = dir.join("manifest.json");
+    let index_bytes = fs::read(&index_path).map_err(|source| Error::Io {
+        path: index_path,
+        source,
+    })?;
+    let index: ArchiveIndex = serde_json::from_slice(&index_bytes)?;
+    let payload = load_payload_map(&dir.join("files"))?;
+    verify_archive_integrity(&manifest, &index, &payload)?;
+    Ok(PackageArchive { manifest, index })
+}
+
+fn load_payload_map(files_dir: &Path) -> Result<BTreeMap<String, Vec<u8>>> {
+    let entries = collect_payload(files_dir)?;
+    Ok(entries
+        .into_iter()
+        .map(|entry| (entry.meta.path, entry.data))
+        .collect())
+}
+
+struct VerifiedArchive {
+    package_toml: String,
+    manifest_json: Vec<u8>,
+    payload: BTreeMap<String, Vec<u8>>,
+    manifest: PackageManifest,
+    index: ArchiveIndex,
+}
+
+fn load_verified_archive(archive_path: &Path) -> Result<VerifiedArchive> {
     let file = File::open(archive_path).map_err(|source| Error::Io {
         path: archive_path.to_path_buf(),
         source,
@@ -234,7 +326,14 @@ pub fn inspect(archive_path: &Path) -> Result<PackageArchive> {
     let manifest = parse_manifest(&package_toml)?;
     let index: ArchiveIndex = serde_json::from_slice(&manifest_json)?;
     verify_archive_integrity(&manifest, &index, &payload)?;
-    Ok(PackageArchive { manifest, index })
+
+    Ok(VerifiedArchive {
+        package_toml,
+        manifest_json,
+        payload,
+        manifest,
+        index,
+    })
 }
 
 fn verify_archive_integrity(
@@ -595,6 +694,66 @@ mod tests {
         encoder.finish().unwrap();
 
         let err = inspect(&bad).unwrap_err();
+        assert!(
+            err.to_string().contains("blake3 mismatch") || err.to_string().contains("integrity"),
+            "expected integrity error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn extract_round_trip() {
+        let dir = tempdir().unwrap();
+        let pkg = dir.path().join("pkg");
+        init_package(
+            &pkg,
+            &InitOptions {
+                id: "org.example.editor".into(),
+                name: "Example Editor".into(),
+                version: "0.1.0".into(),
+                force: false,
+            },
+        )
+        .unwrap();
+        fs::write(pkg.join("files/hello.txt"), b"hello").unwrap();
+
+        let archive = dir.path().join("pkg.lar");
+        pack(&pkg, &archive).unwrap();
+
+        let dest = dir.path().join("extracted");
+        let extracted = extract(&archive, &dest).unwrap();
+        assert_eq!(extracted.manifest.package.id, "org.example.editor");
+        assert!(dest.join("package.toml").is_file());
+        assert!(dest.join("manifest.json").is_file());
+        assert_eq!(fs::read(dest.join("files/hello.txt")).unwrap(), b"hello");
+
+        let err = extract(&archive, &dest).unwrap_err();
+        assert!(err.to_string().contains("already exists"));
+    }
+
+    #[test]
+    fn verify_package_dir_rejects_tampered_disk() {
+        let dir = tempdir().unwrap();
+        let pkg = dir.path().join("pkg");
+        init_package(
+            &pkg,
+            &InitOptions {
+                id: "org.example.editor".into(),
+                name: "Example Editor".into(),
+                version: "0.1.0".into(),
+                force: false,
+            },
+        )
+        .unwrap();
+        fs::write(pkg.join("files/hello.txt"), b"hello").unwrap();
+
+        let archive = dir.path().join("pkg.lar");
+        pack(&pkg, &archive).unwrap();
+
+        let dest = dir.path().join("extracted");
+        extract(&archive, &dest).unwrap();
+        fs::write(dest.join("files/hello.txt"), b"TAMPERED").unwrap();
+
+        let err = verify_package_dir(&dest).unwrap_err();
         assert!(
             err.to_string().contains("blake3 mismatch") || err.to_string().contains("integrity"),
             "expected integrity error, got: {err}"

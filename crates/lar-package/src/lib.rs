@@ -8,7 +8,9 @@ mod pack;
 pub use error::Error;
 pub use id::validate_package_id;
 pub use manifest::{Desktop, Entry, PackageManifest, PackageMeta, FORMAT_VERSION};
-pub use pack::{inspect, pack, InitOptions, PackageArchive, PackedFile};
+pub use pack::{
+    extract, inspect, pack, verify_package_dir, InitOptions, PackageArchive, PackedFile,
+};
 
 use std::path::{Path, PathBuf};
 

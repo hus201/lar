@@ -262,6 +262,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "lar-package",
+ "lar-store",
  "serde_json",
  "tempfile",
 ]
@@ -279,6 +280,16 @@ dependencies = [
  "thiserror",
  "toml",
  "zstd",
+]
+
+[[package]]
+name = "lar-store"
+version = "0.1.0"
+dependencies = [
+ "lar-package",
+ "tempfile",
+ "thiserror",
+ "toml",
 ]
 
 [[package]]

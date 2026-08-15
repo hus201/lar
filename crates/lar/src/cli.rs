@@ -134,6 +134,16 @@ pub enum StoreCmd {
     },
     /// List packages in the local store
     List,
+    /// Remove a package version from the local store
+    Remove {
+        /// Package id
+        id: String,
+        /// Package version
+        version: String,
+        /// Also remove packages that depend on this one (cascade)
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]

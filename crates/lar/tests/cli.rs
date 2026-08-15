@@ -30,17 +30,98 @@ fn help_lists_core_commands() {
 }
 
 #[test]
-fn non_package_commands_are_stubbed() {
-    let output = lar()
-        .args(["store", "list"])
-        .output()
-        .expect("failed to run lar");
+fn unimplemented_commands_are_stubbed() {
+    let output = lar().args(["resolve"]).output().expect("failed to run lar");
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("lar store list: not implemented yet"),
+        stderr.contains("lar resolve: not implemented yet"),
         "{stderr}"
     );
+}
+
+#[test]
+fn store_add_and_list() {
+    let dir = tempdir().unwrap();
+    let prefix = dir.path().join("prefix");
+    let pkg = dir.path().join("pkg");
+
+    let init = lar()
+        .args([
+            "package",
+            "init",
+            "--id",
+            "org.example.editor",
+            "--name",
+            "Example Editor",
+        ])
+        .arg(&pkg)
+        .output()
+        .unwrap();
+    assert!(init.status.success());
+    fs::write(pkg.join("files/hello.txt"), b"hello").unwrap();
+
+    let pack = lar().args(["package", "pack"]).arg(&pkg).output().unwrap();
+    assert!(
+        pack.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&pack.stderr)
+    );
+    let lar_path = pkg.join("org.example.editor-0.1.0.lar");
+
+    let add = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["store", "add"])
+        .arg(&lar_path)
+        .output()
+        .unwrap();
+    assert!(
+        add.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&add.stderr)
+    );
+
+    let list = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["store", "list"])
+        .output()
+        .unwrap();
+    assert!(list.status.success());
+    let stdout = String::from_utf8_lossy(&list.stdout);
+    assert!(stdout.contains("org.example.editor"), "{stdout}");
+    assert!(stdout.contains("0.1.0"), "{stdout}");
+    assert!(stdout.contains("blake3:"), "{stdout}");
+
+    let remove = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["store", "remove", "org.example.editor", "0.1.0"])
+        .output()
+        .unwrap();
+    assert!(
+        remove.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&remove.stderr)
+    );
+
+    let list_after = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["store", "list"])
+        .output()
+        .unwrap();
+    assert!(list_after.status.success());
+    assert!(String::from_utf8_lossy(&list_after.stdout)
+        .trim()
+        .is_empty());
+
+    let config = lar()
+        .env("LAR_USER_PREFIX", &prefix)
+        .args(["config", "--json"])
+        .output()
+        .unwrap();
+    assert!(config.status.success());
+    let cfg = String::from_utf8_lossy(&config.stdout);
+    assert!(cfg.contains("prefix"), "{cfg}");
+    assert!(cfg.contains("store"), "{cfg}");
 }
 
 #[test]

@@ -7,12 +7,12 @@ use clap::Parser;
 
 use cli::{Cli, Commands, PackageCmd, RepoCmd, RuntimeCmd, StoreCmd};
 use lar_package::{init_package, inspect, pack, validate_package, InitOptions};
+use lar_store::{prefix, Paths, Store};
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
-    let _ = cli.system;
 
-    match run(cli.command) {
+    match run(cli.system, cli.command) {
         Ok(()) => ExitCode::SUCCESS,
         Err(message) => {
             eprintln!("{message}");
@@ -21,11 +21,72 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(command: Commands) -> Result<(), String> {
+fn run(system: bool, command: Commands) -> Result<(), String> {
     match command {
         Commands::Package { command } => run_package(command),
+        Commands::Store { command } => run_store(system, command),
+        Commands::Config { json } => run_config(system, json),
         other => Err(format!("{}: not implemented yet", command_name(&other))),
     }
+}
+
+fn open_store(system: bool) -> Store {
+    let paths = Paths::from_prefix(prefix(system), system);
+    Store::open(paths)
+}
+
+fn run_store(system: bool, command: StoreCmd) -> Result<(), String> {
+    let store = open_store(system);
+    match command {
+        StoreCmd::Add { package } => {
+            let stored = store.add(&package).map_err(|err| err.to_string())?;
+            println!(
+                "{} {} -> {}",
+                stored.id,
+                stored.version,
+                stored.path.display()
+            );
+            Ok(())
+        }
+        StoreCmd::List => {
+            let packages = store.list().map_err(|err| err.to_string())?;
+            for pkg in packages {
+                println!("{} {} {}", pkg.id, pkg.version, pkg.content_hash);
+            }
+            Ok(())
+        }
+        StoreCmd::Remove { id, version, force } => {
+            let removed = store
+                .remove(&id, &version, force)
+                .map_err(|err| err.to_string())?;
+            for pkg in removed {
+                println!("removed {} {}", pkg.id, pkg.version);
+            }
+            Ok(())
+        }
+    }
+}
+
+fn run_config(system: bool, json: bool) -> Result<(), String> {
+    let paths = Paths::from_prefix(prefix(system), system);
+    if json {
+        let value = serde_json::json!({
+            "system": paths.system,
+            "prefix": paths.prefix,
+            "store": paths.store,
+            "packages": paths.packages,
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?
+        );
+    } else {
+        println!("system {}", paths.system);
+        println!("prefix {}", paths.prefix.display());
+        println!("store {}", paths.store.display());
+        println!("packages {}", paths.packages.display());
+    }
+    Ok(())
 }
 
 fn run_package(command: PackageCmd) -> Result<(), String> {
@@ -154,6 +215,7 @@ fn command_name(command: &Commands) -> &'static str {
         Commands::Store { command } => match command {
             StoreCmd::Add { .. } => "lar store add",
             StoreCmd::List => "lar store list",
+            StoreCmd::Remove { .. } => "lar store remove",
         },
         Commands::Resolve { .. } => "lar resolve",
         Commands::Runtime { command } => match command {
