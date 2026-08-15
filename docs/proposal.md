@@ -48,9 +48,9 @@ Three layers:
 |-------|------|
 | Linux platform | Kernel, drivers, system services, desktop, hardware |
 | LAR | Packages, SxS store, resolution, runtimes |
-| Application ecosystem | App repositories, packages, updates |
+| Application ecosystem | Package sources (repos), packages, updates |
 
-For component responsibilities (repos, registry, store, resolver), package model, runtime, security, and related topics, see the [design specifications](design/).
+For component responsibilities (package sources, store, resolver), package model, runtime, security, and related topics, see the [design specifications](design/).
 
 ---
 

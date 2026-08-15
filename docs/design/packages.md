@@ -4,7 +4,7 @@
 
 Everything managed by LAR is represented as a package.
 
-LAR uses a **single package kind**. There is no required package `type` or `role` field.
+LAR uses a **single package kind**. There is no required package `type` or `role` field. Distribution uses one **package source** abstraction with per-source policy (`deps` / `apps`); see [architecture.md](architecture.md).
 
 A package is defined by:
 

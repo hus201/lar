@@ -82,7 +82,7 @@ pub enum Commands {
         /// Application package id
         app: String,
     },
-    /// Manage application repositories and package registries
+    /// Manage package sources (repos)
     Repo {
         #[command(subcommand)]
         command: RepoCmd,
@@ -192,19 +192,19 @@ pub enum RuntimeCmd {
 
 #[derive(Debug, Subcommand)]
 pub enum RepoCmd {
-    /// Add an application repository or package registry
+    /// Add a package source
     Add {
-        /// Repository URL
+        /// Source URL
         url: String,
-        /// Source kind
-        #[arg(long, value_parser = ["app", "registry"], default_value = "app")]
-        r#type: String,
+        /// What this source may provide: deps only, apps only, or both
+        #[arg(long, value_parser = ["deps", "apps", "both"], default_value = "both")]
+        policy: String,
     },
-    /// List configured repositories
+    /// List configured package sources
     List,
-    /// Remove a configured repository
+    /// Remove a configured package source
     Remove {
-        /// Repository URL or name
+        /// Source URL or name
         source: String,
     },
 }

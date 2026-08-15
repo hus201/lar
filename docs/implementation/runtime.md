@@ -7,7 +7,7 @@
 - Input: path to `lar.lock` or a directory containing it
 - All locked packages (including root) must be in the store with matching `content_hash`
 - Configurable compose mode (default **symlink**); same relative path from two packages → error
-- No repos or sandbox
+- No package-source fetch or sandbox
 
 ## Compose modes
 

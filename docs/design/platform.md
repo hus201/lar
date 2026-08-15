@@ -42,7 +42,7 @@ Applications and operating systems have independent update cycles.
 
 Application updates:
 
-- Managed by application repositories.
+- Managed via package sources (repos) that allow applications.
 - Resolve new runtime environments.
 - Do not require OS upgrades.
 

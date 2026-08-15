@@ -5,7 +5,7 @@ Implemented in the `lar-manager` crate. `lar install` records an application und
 ## Scope (v1)
 
 - Sources: path to a `.lar`, or a store package `id` / `id@version` (bare `id` requires exactly one version in the store)
-- No repository fetch
+- No repository fetch (local `.lar` / store only; package sources planned — [architecture.md](../design/architecture.md))
 - One active install per application id (use `--force` to replace)
 - Uninstall does not purge store packages
 

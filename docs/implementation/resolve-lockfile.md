@@ -5,10 +5,12 @@
 ## Scope (v1)
 
 - Input: a local `package.toml` (or a directory containing it)
-- Dependency source: the local store only (no repo fetch)
+- Dependency source: the local store only (no fetch from package sources yet)
 - Versions: exact pins only (no ranges)
 - Root package: always included from the local manifest
 - Dependencies: must already exist in the store at the pinned version
+
+When fetch is implemented, missing exact pins are retrieved from configured package sources according to source policy: the default **main** source is dependency-only and is searched **first** among `deps` sources (see [architecture](../design/architecture.md)).
 
 ## Algorithm
 
@@ -21,6 +23,8 @@
    - Load that package’s `package.toml` from the store and enqueue its deps
 4. Cycles are an error.
 5. Write `lar.lock` next to the root `package.toml`.
+
+(No fetch from package sources and no version ranges in the current implementation.)
 
 ## Lockfile format (`lar.lock`)
 
@@ -80,4 +84,6 @@ This is intended for runtime composition and tooling that must refuse a stale lo
 - Package format: [package-format.md](package-format.md)
 - SxS store: [sxs-store.md](sxs-store.md)
 - Runtime: [runtime.md](runtime.md)
+- Install: [install.md](install.md)
+- Design (package sources): [architecture.md](../design/architecture.md)
 - Design: [Dependency resolution](../design/dependency-resolution.md)

@@ -1,44 +1,68 @@
 # Architecture Overview
 
-**Status:** Partial — SxS store, resolver (lockfile), runtime, and install records are implemented; application repositories and package registries are planned.
+**Status:** Partial — SxS store, resolver (lockfile), runtime, and install records are implemented; package sources (repos) and fetch are planned.
 
 LAR consists of four major components.
 
-## Application Repository
+## Package sources (repos)
 
 **Status:** Planned
 
-Provides applications.
+A **package source** (CLI: `lar repo`) is a remote or local index that distributes LAR packages (`.lar` archives and metadata). There is a single source abstraction — not a separate “application repository” vs “package registry.”
 
-Responsibilities:
+That matches the package model: **one package kind**. Libraries, frameworks, and applications are the same artifact shape; capabilities come from the manifest (`[entry]`, `[desktop]`, dependencies), not from which subsystem published them.
 
-- Application distribution.
-- Application metadata.
-- Application versions.
-- Application signatures.
+### Responsibilities
 
-Application repositories are decentralized.
+- Package distribution and metadata
+- Package versions and integrity (hashes; signatures later)
+- Serving content for resolve-time fetch into the SxS store
 
-Examples:
+Sources are decentralized. Examples:
 
-- Vendor repositories.
-- Community repositories.
-- Enterprise repositories.
+- A shared **main** dependency ecosystem
+- Vendor sources
+- Community sources
+- Enterprise sources
+- Local/offline mirrors
 
-## Package Registry
+### Source policy
 
-**Status:** Planned
+Policy is attached to the **source**, not inferred from the package id.
 
-Provides shared packages required by applications.
+| Policy | Meaning |
+|--------|---------|
+| `deps` | Resolver may fetch packages from this source to satisfy `[dependencies]` |
+| `apps` | `lar install <id>` may select a root application from this source |
 
-Responsibilities:
+A source may allow `deps`, `apps`, or both.
 
-- Library packages.
-- Runtime components.
-- Frameworks.
-- Dependency metadata.
+**Default policy for the main source:** **dependency-only** (`deps`, not `apps`).
 
-The Package Registry is the shared dependency ecosystem.
+- Users do not install applications from main.
+- Applications come from sources that allow `apps` (vendor/community/enterprise) or from a local `.lar`.
+- Resolve may still pull shared libraries and runtimes from main.
+
+App-capable sources may also publish their own dependencies (air-gapped or fully pinned stacks) even when main exists.
+
+### Source priority
+
+When fetching a missing dependency, search order is:
+
+1. Local SxS store (already present → use it; no fetch)
+2. **main** (if configured and allows `deps`)
+3. Other configured sources that allow `deps`, in configuration order
+
+First exact `(id, version)` hit wins. Do not merge or prefer a later source’s copy of the same pin.
+
+For `lar install <id>`, only sources with `apps` are considered (main is skipped when it is deps-only), in configuration order, after local `.lar` / store.
+
+### Install vs resolve lookup
+
+- **`lar install <id>`** — search only sources with `apps` (plus local `.lar` / already-in-store).
+- **Resolve / fetch missing deps** — search sources with `deps`, **main first**, then others.
+
+Exact pins and the local SxS store remain the source of truth after fetch; repos do not replace the store.
 
 ## SxS Package Store
 
@@ -51,19 +75,26 @@ Responsibilities:
 - Store resolved packages.
 - Maintain multiple versions.
 - Provide package content for runtime creation.
+- Enforce remove referrers (package deps and install pins).
 
-The SxS Store is the source of truth for installed packages.
+The SxS Store is the source of truth for packages present on the machine.
 
 ## Runtime Resolver
 
-**Status:** Partial — resolve/lockfile, runtime compose/`lar run`, and install records are implemented; version ranges, fetch, and desktop launch planned — [resolve-lockfile.md](../implementation/resolve-lockfile.md), [runtime.md](../implementation/runtime.md), [install.md](../implementation/install.md)
+**Status:** Partial — resolve/lockfile, runtime compose/`lar run`, and install records are implemented; version ranges, fetch from package sources, and desktop launch planned — [resolve-lockfile.md](../implementation/resolve-lockfile.md), [runtime.md](../implementation/runtime.md), [install.md](../implementation/install.md)
 
 Responsible for creating application execution environments.
 
 Responsibilities:
 
 - Read application manifests.
-- Resolve dependencies.
+- Resolve dependencies (store today; fetch from package sources later).
 - Select compatible package versions.
 - Create runtime environments.
 - Launch applications.
+
+## Application lifecycle
+
+**Status:** Partial — [install.md](../implementation/install.md)
+
+Install records under `{prefix}/installs/` track what the user installed, pin store packages, and point at a composed runtime. Update/rollback remain planned and will hang on those records.
