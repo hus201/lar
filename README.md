@@ -48,3 +48,11 @@ cargo clippy --workspace --all-targets
 ```
 
 The CLI binaries are `lar` and `lar-exec` (PATH-export trampoline; separate package, light deps).
+
+## Packages
+
+```bash
+./packaging/dist.sh   # needs cargo-deb and cargo-generate-rpm
+```
+
+Produces `dist/lar_*.deb`, `dist/lar-*.rpm`, and `dist/lar-*-linux-*.tar.gz`. Details: [packaging/README.md](packaging/README.md).

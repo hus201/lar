@@ -23,3 +23,34 @@ serde_json.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+
+[package.metadata.deb]
+name = "lar"
+maintainer = "Hussein Anabtawi <husainanabtawi2001@hotmail.com>"
+copyright = "2026 Hussein Anabtawi"
+license-file = ["../../LICENSE", "0"]
+section = "utils"
+priority = "optional"
+extended-description = """\
+Linux Application Runtime (LAR): side-by-side packages, resolved runtimes,\
+and native PATH/desktop launch via lar-exec."""
+depends = "$auto"
+assets = [
+    ["../../packaging/staging/bin/lar", "usr/bin/", "755"],
+    ["../../packaging/staging/bin/lar-exec", "usr/bin/", "755"],
+    ["../../README.md", "usr/share/doc/lar/README.md", "644"],
+    ["../../docs/releases/0.8.0.md", "usr/share/doc/lar/RELEASE-0.8.0.md", "644"],
+    ["../../LICENSE", "usr/share/doc/lar/LICENSE", "644"],
+]
+
+[package.metadata.generate-rpm]
+name = "lar"
+license = "MIT"
+summary = "Linux Application Runtime — side-by-side packages and runtimes"
+assets = [
+    { source = "../../packaging/staging/bin/lar", dest = "/usr/bin/lar", mode = "755" },
+    { source = "../../packaging/staging/bin/lar-exec", dest = "/usr/bin/lar-exec", mode = "755" },
+    { source = "../../README.md", dest = "/usr/share/doc/lar/README.md", mode = "644", doc = true },
+    { source = "../../docs/releases/0.8.0.md", dest = "/usr/share/doc/lar/RELEASE-0.8.0.md", mode = "644", doc = true },
+    { source = "../../LICENSE", dest = "/usr/share/doc/lar/LICENSE", mode = "644", doc = true },
+]

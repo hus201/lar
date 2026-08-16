@@ -1,4 +1,6 @@
 /target
+/dist
+/packaging/staging
 **/*.rs.bk
 .idea/
 .vscode/
