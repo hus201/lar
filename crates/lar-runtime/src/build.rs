@@ -254,7 +254,7 @@ pub struct RuntimeLaunchEnv {
     pub lar_runtime: PathBuf,
 }
 
-/// Compute the same env preambles used by [`run_runtime_entry`] / `lar run`.
+/// Compute the shared launch env used by PATH trampoline, `lar launch`, and `lar run`.
 pub fn runtime_launch_env(runtime_path: &Path) -> RuntimeLaunchEnv {
     let files = runtime_path.join("files");
     RuntimeLaunchEnv {

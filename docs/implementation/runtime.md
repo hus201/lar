@@ -1,6 +1,6 @@
 # LAR Runtime Engine
 
-`lar runtime build` composes a disposable runtime from a verified `lar.lock` and the local SxS store. `lar run` builds or reuses that runtime and launches the root package entry binary.
+`lar runtime build` composes a disposable runtime from a verified `lar.lock` and the local SxS store. Installed apps and PATH/desktop entry points then launch binaries from that runtime tree. `lar run` is a lockfile-oriented helper that builds or reuses a runtime and starts the root entry (development / debugging).
 
 ## Scope (v1)
 
@@ -41,9 +41,19 @@ Content-addressed under the LAR prefix:
 2. Verify every package (including root) against the store (`verify_lockfile_ready`).
 3. Compute `runtime_id`; if `{prefix}/runtimes/{runtime_id}` already exists with matching metadata, reuse it.
 4. Otherwise compose under `.tmp-runtime-*` using the selected mode, write `runtime.toml`, rename into place.
-5. `lar run` selects the root `[entry]` default (or sole binary), prepends runtime `bin`/`usr/bin` (and sbin variants) to `PATH`, and prepends library roots (`lib`, `lib64`, `lib32`, `usr/lib*`, plus one subdirectory level such as `lib/x86_64-linux-gnu`) to `LD_LIBRARY_PATH`, then executes.
 
 `build`, `list`, `inspect`, and `gc` remove leftover `{prefix}/runtimes/.tmp-runtime-*` directories from failed or crashed builds.
+
+## Launch environment
+
+Every LAR launch (PATH trampoline, `.desktop` → export link, `lar launch`, and `lar run`) prepares the same process environment before `exec` of the entry ELF:
+
+- Select the root `[entry]` default (or a listed binary).
+- Prepend runtime `bin` / `usr/bin` (and sbin variants) to `PATH`.
+- Prepend library roots (`lib`, `lib64`, `lib32`, `usr/lib*`, plus one subdirectory level such as `lib/x86_64-linux-gnu`) to `LD_LIBRARY_PATH`.
+- Set `LAR_RUNTIME` to the runtime directory.
+
+Installed applications normally start via PATH exports or desktop menus — [desktop.md](desktop.md). `lar run` only applies for a working-tree / lockfile workflow.
 
 ## Garbage collection
 
@@ -56,6 +66,8 @@ Runtimes are disposable; `--all` is safe if you can rebuild from lockfiles. Defa
 
 ## CLI
 
+Runtime management:
+
 ```bash
 lar runtime build
 lar runtime build --compose hardlink
@@ -65,16 +77,21 @@ lar runtime gc
 lar runtime gc --all
 lar runtime inspect <runtime_id-or-path>
 lar runtime inspect --json <runtime_id-or-path>
-lar run
-lar run --compose hardlink
-lar run path/to/dir-or-lar.lock -- --help
 ```
 
 - `runtime list` prints `runtime_id root_id root_version compose path` (sorted by id).
 - `runtime inspect` prints root, id, compose, path, and packages (or JSON with `--json`).
 - `runtime gc` prints each removed runtime/orphan and a summary (`broken` vs `orphan` counts).
 
-Workflow:
+### Lockfile launch (`lar run`)
+
+For package authors working from a `lar.lock` (not the normal path for installed apps):
+
+```bash
+lar run
+lar run --compose hardlink
+lar run path/to/dir-or-lar.lock -- --help
+```
 
 ```bash
 lar package pack && lar store add *.lar
@@ -83,8 +100,10 @@ lar runtime build
 lar run
 ```
 
+Installed applications start via PATH exports or desktop menus — [desktop.md](desktop.md).
 ## Related
 
 - Resolve / lockfile: [resolve-lockfile.md](resolve-lockfile.md)
 - SxS store: [sxs-store.md](sxs-store.md)
+- Desktop / PATH launch: [desktop.md](desktop.md)
 - Design: [Runtime model](../design/runtime.md)

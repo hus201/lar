@@ -55,7 +55,7 @@ The `[[packages]]` lists (active **and** previous) are install pin sets used as 
 4. Verify the lock is runtime-ready (root included with matching `content_hash`).
 5. Compose a runtime with the selected `--compose` mode.
 6. Write `install.toml` atomically under `installs/{id}/`.
-7. Publish PATH shims and `.desktop` files when the root has `[entry]` — [desktop.md](desktop.md).
+7. Publish PATH exports and `.desktop` files when the root has `[entry]` — [desktop.md](desktop.md).
 8. On replace (`--force` or update): stash the old active record as `previous.toml` and **keep** its runtime. If an older `previous.toml` already existed, drop that older runtime when it is unused by the new active/previous pair.
 
 ### Update
@@ -74,7 +74,7 @@ The `[[packages]]` lists (active **and** previous) are install pin sets used as 
 ### Uninstall
 
 1. Load active (and previous if present).
-2. Remove published `.desktop` files and PATH shims.
+2. Remove published `.desktop` files and PATH exports.
 3. Remove both referenced runtimes when distinct.
 4. Remove `installs/{id}/`.
 5. Leave store packages in place.
@@ -103,7 +103,7 @@ lar uninstall org.example.app
 - `update` prints `updated id old -> new (runtime …)` or `up to date id version`.
 - `rollback` prints `rolled back id version (runtime …)`.
 - `list` prints `id version compose runtime_id` (sorted by id).
-- `launch` runs the installed entry binary (exit code forwarded).
+- `launch` runs an installed entry binary for admin/debug (exit code forwarded); normal launch is PATH/desktop — [desktop.md](desktop.md).
 - `uninstall` prints `uninstalled id version (runtime <runtime_id>)`.
 - Install/update/rollback may print `warning: PATH: … shadows LAR export …` on stderr when a host binary would win — [desktop.md](desktop.md).
 

@@ -35,7 +35,7 @@ Command name = basename of each `[entry].binaries` path (e.g. `bin/firefox` → 
 ~/.local/bin/{cmd}                      → symlink to {prefix}/bin/{cmd}   # user mode
 ```
 
-When the kernel runs `{cmd}`, it executes the `lar` binary with `argv[0]` basename `{cmd}`. Before CLI parsing, `lar` detects that case, loads the export metadata (by walking `argv[0]` / symlink targets for a `…/bin/{cmd}` under a LAR prefix), applies the same `PATH` / `LD_LIBRARY_PATH` / `LAR_RUNTIME` rules as `lar run`, and `exec`s the entry binary.
+When the kernel runs `{cmd}`, it executes the `lar` binary with `argv[0]` basename `{cmd}`. Before CLI parsing, `lar` detects that case, loads the export metadata (by walking `argv[0]` / symlink targets for a `…/bin/{cmd}` under a LAR prefix), applies the shared [runtime launch environment](runtime.md#launch-environment), and `exec`s the entry binary.
 
 Export metadata is rewritten whenever the install’s `runtime_id` changes (install replace / update / rollback). `{prefix}/libexec/lar` is refreshed to the current `lar` executable on publish and `lar launch`.
 
@@ -77,12 +77,12 @@ StartupNotify=true
 
 ## `lar launch`
 
-Debug/admin path (still available):
+Debug/admin path for an installed app (menus and PATH exports are the normal entry points):
 
 1. Load the install record for `app_id`
 2. Require `{prefix}/runtimes/{runtime_id}` (suggest reinstall if missing)
 3. Require root package `[entry]`; optional `--binary` must be listed in `entry.binaries`
-4. Run that binary with the same runtime `PATH` / `LD_LIBRARY_PATH` setup as `lar run`
+4. Apply the shared [runtime launch environment](runtime.md#launch-environment) and `exec` the binary
 
 ```bash
 lar launch org.example.app

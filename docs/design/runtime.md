@@ -1,6 +1,6 @@
 # Runtime Model
 
-**Status:** Implemented — configurable compose modes, list/inspect/gc, and `lar run` — [runtime.md](../implementation/runtime.md)
+**Status:** Implemented — configurable compose modes, list/inspect/gc, and shared launch environment — [runtime.md](../implementation/runtime.md)
 
 ## Side-by-Side Runtime
 
@@ -67,11 +67,6 @@ Normal users should not need to interact directly with runtime management.
 
 The runtime resolution process should be transparent.
 
-A command similar to `lar run` may exist for:
+Installed applications launch through desktop entries, PATH exports, or service managers. Those paths share one launch environment (`PATH`, `LD_LIBRARY_PATH`, `LAR_RUNTIME`) before `exec` of the entry ELF.
 
-- Development.
-- Debugging.
-- Testing.
-- Administrative operations.
-
-It is not required for normal application execution.
+`lar run` remains available for lockfile-oriented development, debugging, and testing. It is not required for normal application execution.
