@@ -5,11 +5,11 @@
 ## Scope (v1)
 
 - Input: a local `package.toml` (or a directory containing it)
-- Dependency source: local store, then package sources with `deps` (**main first** for fetch) — [repos.md](repos.md)
+- Dependency source: local store, then configured package sources (`fetch_priority` first-win or last-win) — [repos.md](repos.md)
 - Versions in manifests: semver **requirements** (`1.2.3`, `^1.2`, `~1.2.3`, `>=1.0, <2`); bare `*` rejected
 - Lockfile: **exact** pins only
 - Root package: always included from the local manifest (exact version)
-- Selection: highest matching semver among store ∪ deps-index candidates (non-yanked)
+- Selection: highest matching semver among store ∪ source-index candidates (non-yanked)
 
 ## Algorithm
 

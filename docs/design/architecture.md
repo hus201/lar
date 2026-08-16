@@ -27,43 +27,24 @@ Sources are decentralized. Examples:
 - Enterprise sources
 - Local/offline mirrors
 
-### Source policy
+### Fetch priority
 
-Policy is attached to the **source**, not inferred from the package id.
+Configurable in `sources.toml` / `lar repo priority`:
 
-| Policy | Meaning |
-|--------|---------|
-| `deps` | Resolver may fetch packages from this source to satisfy `[dependencies]` |
-| `apps` | `lar install <id>` may select a root application from this source |
+| Value | Behavior |
+|-------|----------|
+| `first-win` (default) | First matching source in configuration order wins |
+| `last-win` | Last matching source in configuration order wins |
 
-A source may allow `deps`, `apps`, or both.
+Always: local SxS store wins if the exact `(id, version)` is already present (no fetch).
 
-**Default policy for the main source:** **dependency-only** (`deps`, not `apps`).
+```bash
+lar repo priority first-win
+lar repo priority last-win
+lar repo list   # prints fetch_priority …
+```
 
-- Users do not install applications from main.
-- Applications come from sources that allow `apps` (vendor/community/enterprise) or from a local `.lar`.
-- Resolve may still pull shared libraries and runtimes from main.
-
-App-capable sources may also publish their own dependencies (air-gapped or fully pinned stacks) even when main exists.
-
-### Source priority
-
-When fetching a missing dependency, search order is:
-
-1. Local SxS store (already present → use it; no fetch)
-2. **main** (if configured and allows `deps`)
-3. Other configured sources that allow `deps`, in configuration order
-
-First exact `(id, version)` hit wins. Do not merge or prefer a later source’s copy of the same pin.
-
-For `lar install <id>`, only sources with `apps` are considered (main is skipped when it is deps-only), in configuration order, after local `.lar` / store.
-
-### Install vs resolve lookup
-
-- **`lar install <id>`** — search only sources with `apps` (plus local `.lar` / already-in-store).
-- **Resolve / fetch missing deps** — search sources with `deps`, **main first**, then others.
-
-Exact pins and the local SxS store remain the source of truth after fetch; repos do not replace the store.
+Do not merge sources. Exact pins and the local store remain the source of truth after fetch.
 
 ## SxS Package Store
 

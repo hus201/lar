@@ -4,8 +4,8 @@ Install records, PATH/desktop integration, and update/rollback. Details: [instal
 
 ## Prerequisites
 
-- App package in the store, as a `.lar` path, or fetchable from an `apps`/`both` source — [use-repo.md](use-repo.md)
-- Dependencies available in the store or from `deps`/`both` sources
+- App package in the store, as a `.lar` path, or fetchable from a configured source — [use-repo.md](use-repo.md)
+- Dependencies available in the store or from configured sources
 
 ## Install
 
@@ -32,7 +32,7 @@ lar install --force org.example.app@0.2.0
 ## Update and rollback
 
 ```bash
-lar update org.example.app      # newest newer semver from apps sources
+lar update org.example.app      # newest newer semver from configured sources
 lar rollback org.example.app    # swap with the single previous generation
 ```
 

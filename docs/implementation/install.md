@@ -63,7 +63,7 @@ The `[[packages]]` lists (active **and** previous) are install pin sets used as 
 1. Load active install.
 2. Scan configured `apps` sources for the same id; pick the highest semver **strictly greater** than the active version.
 3. If none → report up to date (no change).
-4. Fetch that pin (`LookupMode::Apps`), resolve, compose using the active install’s compose mode, and activate as a replace (stash previous).
+4. Fetch that pin from configured sources, resolve, compose using the active install’s compose mode, and activate as a replace (stash previous).
 
 ### Rollback
 

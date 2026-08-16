@@ -14,8 +14,9 @@ use lar_manager::{
 use lar_package::{init_package, inspect, pack, validate_package, InitOptions};
 use lar_repo::{
     add_source, audit, audit_should_fail, build_index, default_source_name, init_repo, keygen,
-    load_sources, load_trust, publish_package, remove_source, sign_advisories_in_dir, trust_add,
-    trust_remove, unpublish_package, validate_repo, write_index, AuditScope, SourcePolicy,
+    load_sources, load_trust, publish_package, remove_source, set_fetch_priority,
+    sign_advisories_in_dir, trust_add, trust_remove, unpublish_package, validate_repo, write_index,
+    AuditScope, FetchPriority,
 };
 use lar_resolver::{lockfile_path_for_manifest, resolve, write_lockfile};
 use lar_runtime::{
@@ -403,30 +404,24 @@ fn run_config(system: bool, json: bool) -> Result<(), String> {
 fn run_repo(system: bool, command: RepoCmd) -> Result<(), String> {
     let store = open_store(system);
     match command {
-        RepoCmd::Add {
-            uri,
-            policy,
-            main,
-            name,
-        } => {
-            let policy = policy.unwrap_or_else(|| if main { "deps".into() } else { "both".into() });
-            let policy: SourcePolicy =
-                policy.parse().map_err(|e: lar_repo::Error| e.to_string())?;
-            let name = name.unwrap_or_else(|| default_source_name(&uri, main));
-            let entry = add_source(&store, name, uri, policy, main).map_err(|e| e.to_string())?;
-            let main_tag = if entry.main { " main" } else { "" };
-            println!(
-                "added {} {} ({}){main_tag}",
-                entry.name, entry.uri, entry.policy
-            );
+        RepoCmd::Add { uri, name } => {
+            let name = name.unwrap_or_else(|| default_source_name(&uri));
+            let entry = add_source(&store, name, uri).map_err(|e| e.to_string())?;
+            println!("added {} {}", entry.name, entry.uri);
             Ok(())
         }
         RepoCmd::List => {
             let file = load_sources(&store).map_err(|e| e.to_string())?;
+            println!("fetch_priority {}", file.fetch_priority);
             for src in &file.sources {
-                let main_tag = if src.main { " main" } else { "" };
-                println!("{} {} ({}){main_tag}", src.name, src.uri, src.policy);
+                println!("{} {}", src.name, src.uri);
             }
+            Ok(())
+        }
+        RepoCmd::Priority { value } => {
+            let priority: FetchPriority = value.parse().map_err(|e: lar_repo::Error| e.to_string())?;
+            let set = set_fetch_priority(&store, priority).map_err(|e| e.to_string())?;
+            println!("fetch_priority {set}");
             Ok(())
         }
         RepoCmd::Remove { source } => {

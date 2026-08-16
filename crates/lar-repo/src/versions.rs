@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use lar_store::Store;
 
 use crate::advisories::verify_advisories;
-use crate::sources::{load_sources, ordered_deps_sources};
+use crate::sources::{load_sources, ordered_sources};
 use crate::transport::{parse_uri, read_advisories, read_index};
 use crate::trust::load_trust;
 use crate::Result;
@@ -11,7 +11,7 @@ use crate::Result;
 /// List candidate versions of `id` for dependency resolution.
 ///
 /// Includes every version present in the local store, plus versions published
-/// in configured **deps** sources that are not marked yanked in that source's
+/// in configured package sources that are not marked yanked in that source's
 /// advisories.
 pub fn list_dep_versions(store: &Store, id: &str) -> Result<Vec<String>> {
     let mut versions = BTreeSet::new();
@@ -24,7 +24,7 @@ pub fn list_dep_versions(store: &Store, id: &str) -> Result<Vec<String>> {
 
     let sources = load_sources(store)?;
     let trust = load_trust(store)?;
-    for src in ordered_deps_sources(&sources) {
+    for src in ordered_sources(&sources) {
         let Ok(base) = parse_uri(&src.uri) else {
             continue;
         };

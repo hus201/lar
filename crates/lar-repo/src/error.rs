@@ -11,9 +11,6 @@ pub enum Error {
     #[error("source not found: {0}")]
     SourceNotFound(String),
 
-    #[error("a main source is already configured ({0})")]
-    MainAlreadySet(String),
-
     #[error("unsupported source uri `{0}` (use a path, file://, http://, or https://)")]
     UnsupportedUri(String),
 

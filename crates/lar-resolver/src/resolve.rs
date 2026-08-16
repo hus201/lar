@@ -133,7 +133,6 @@ impl<'a> ResolveCtx<'a> {
                 self.store,
                 id,
                 &version,
-                lar_repo::LookupMode::Deps,
                 &mut std::io::stderr(),
             )
             .map_err(|err| match err {

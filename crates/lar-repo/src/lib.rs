@@ -5,7 +5,6 @@ mod audit;
 mod error;
 mod fetch;
 mod index;
-mod policy;
 mod publish;
 mod sources;
 mod transport;
@@ -23,13 +22,12 @@ pub use fetch::{
     AdvisoryWarning,
 };
 pub use index::{build_index, parse_index, write_index, IndexPackage, PackageIndex, INDEX_FORMAT};
-pub use policy::{LookupMode, SourcePolicy};
 pub use publish::{
     init_repo, publish_package, unpublish_package, validate_repo, IndexPackageInfo, ValidateReport,
 };
 pub use sources::{
-    add_source, default_source_name, load_sources, ordered_apps_sources, ordered_deps_sources,
-    remove_source, save_sources, SourceEntry, SourcesFile, SOURCES_FORMAT,
+    add_source, default_source_name, load_sources, ordered_sources, remove_source, save_sources,
+    set_fetch_priority, FetchPriority, SourceEntry, SourcesFile, SOURCES_FORMAT,
 };
 pub use transport::{parse_uri, read_advisories, read_index, SourceBase};
 pub use trust::{

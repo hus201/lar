@@ -222,19 +222,18 @@ pub enum RepoCmd {
     Add {
         /// Local path or http(s) base URI
         uri: String,
-        /// What this source may provide: deps only, apps only, or both
-        /// (default: deps with --main, otherwise both)
-        #[arg(long, value_parser = ["deps", "apps", "both"])]
-        policy: Option<String>,
-        /// Mark as the main dependency source (unique; default policy deps)
-        #[arg(long)]
-        main: bool,
-        /// Source name (default: main if --main, else basename/host)
+        /// Source name (default: basename/host from URI)
         #[arg(long)]
         name: Option<String>,
     },
     /// List configured package sources
     List,
+    /// Set fetch priority when multiple sources publish the same pin
+    Priority {
+        /// `first-win` (default) or `last-win`
+        #[arg(value_parser = ["first-win", "last-win", "first", "last"])]
+        value: String,
+    },
     /// Remove a configured package source
     Remove {
         /// Source name or URI

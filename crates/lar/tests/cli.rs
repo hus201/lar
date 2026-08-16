@@ -1362,7 +1362,7 @@ url = "https://example.test/LAR-2026-0099"
     );
 
     let add = lar_user(&prefix)
-        .args(["repo", "add", "--main"])
+        .args(["repo", "add", "--name", "main"])
         .arg(&repo)
         .output()
         .unwrap();
@@ -1372,9 +1372,10 @@ url = "https://example.test/LAR-2026-0099"
         String::from_utf8_lossy(&add.stderr)
     );
     let add_out = String::from_utf8_lossy(&add.stdout);
+    let repo_s = repo.display().to_string();
     assert!(
-        add_out.contains("(deps)") && add_out.contains("main"),
-        "expected deps main default, got {add_out}"
+        add_out.contains("added main") && add_out.contains(&repo_s),
+        "expected added main <uri>, got {add_out}"
     );
 
     let app = dir.path().join("app");
@@ -1471,7 +1472,7 @@ summary = "Yanked after ship"
         .status
         .success());
     assert!(lar_user(&prefix2)
-        .args(["repo", "add", "--main"])
+        .args(["repo", "add", "--name", "main"])
         .arg(&repo)
         .output()
         .unwrap()
@@ -1588,50 +1589,13 @@ binaries = ["bin/app"]
         .status
         .success());
 
-    // deps-only main must not satisfy install-by-id
-    let deps_only = dir.path().join("deps-repo");
-    fs::create_dir_all(deps_only.join("packages")).unwrap();
-    fs::copy(
-        app.join("org.example.vendorapp-0.1.0.lar"),
-        deps_only.join("packages/org.example.vendorapp-0.1.0.lar"),
-    )
-    .unwrap();
-    assert!(lar()
-        .args(["repo", "index"])
-        .arg(&deps_only)
-        .args(["--sign-key"])
-        .arg(keys.join("ed25519.sec"))
-        .output()
-        .unwrap()
-        .status
-        .success());
     assert!(lar_user(&prefix)
-        .args(["repo", "add", "--main"])
-        .arg(&deps_only)
-        .output()
-        .unwrap()
-        .status
-        .success());
-
-    let miss = lar_user(&prefix)
-        .args(["install", "org.example.vendorapp"])
-        .output()
-        .unwrap();
-    assert!(
-        !miss.status.success(),
-        "deps-only main should not install apps"
-    );
-
-    let add_apps = lar_user(&prefix)
-        .args(["repo", "add", "--policy", "apps", "--name", "vendor"])
+        .args(["repo", "add", "--name", "vendor"])
         .arg(&repo)
         .output()
-        .unwrap();
-    assert!(
-        add_apps.status.success(),
-        "stderr={}",
-        String::from_utf8_lossy(&add_apps.stderr)
-    );
+        .unwrap()
+        .status
+        .success());
 
     let install = lar_user(&prefix)
         .args(["install", "org.example.vendorapp"])
@@ -1747,7 +1711,7 @@ binaries = ["bin/app"]
         .status
         .success());
     assert!(lar_user(&prefix)
-        .args(["repo", "add", "--policy", "apps", "--name", "vendor"])
+        .args(["repo", "add", "--name", "vendor"])
         .arg(&repo)
         .output()
         .unwrap()

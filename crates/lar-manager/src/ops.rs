@@ -487,7 +487,7 @@ fn parse_semver(version: &str) -> Result<Version> {
 fn apps_versions_for(store: &Store, id: &str) -> Result<Vec<String>> {
     let sources = lar_repo::load_sources(store)?;
     let mut found = Vec::new();
-    for src in lar_repo::ordered_apps_sources(&sources) {
+    for src in lar_repo::ordered_sources(&sources) {
         let Ok(base) = lar_repo::parse_uri(&src.uri) else {
             continue;
         };
@@ -543,17 +543,12 @@ fn lookup_store_root(store: &Store, id: &str, version: Option<&str>) -> Result<S
             )?;
             return Ok(stored);
         }
-        return lar_repo::fetch_into_store(
-            store,
-            id,
-            version,
-            lar_repo::LookupMode::Apps,
-            &mut std::io::stderr(),
-        )
-        .map_err(|err| match err {
-            lar_repo::Error::PackageNotFound { id, version } => Error::NotInStore { id, version },
-            other => other.into(),
-        });
+        return lar_repo::fetch_into_store(store, id, version, &mut std::io::stderr()).map_err(
+            |err| match err {
+                lar_repo::Error::PackageNotFound { id, version } => Error::NotInStore { id, version },
+                other => other.into(),
+            },
+        );
     }
 
     let matches: Vec<_> = store.list()?.into_iter().filter(|p| p.id == id).collect();
@@ -561,7 +556,7 @@ fn lookup_store_root(store: &Store, id: &str, version: Option<&str>) -> Result<S
         0 => {
             let sources = lar_repo::load_sources(store)?;
             let mut found: Vec<(String, String)> = Vec::new();
-            for src in lar_repo::ordered_apps_sources(&sources) {
+            for src in lar_repo::ordered_sources(&sources) {
                 let Ok(base) = lar_repo::parse_uri(&src.uri) else {
                     continue;
                 };

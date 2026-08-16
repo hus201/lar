@@ -16,34 +16,27 @@ lar repo trust list
 ## 2. Add the source
 
 ```bash
-# Main dependency source (unique; default policy deps)
-lar repo add --main https://example.com/lar-repo/
+# HTTP(S) or local path (name defaults from URI basename/host)
+lar repo add https://example.com/lar-repo/
+lar repo add /path/to/my-repo
 
-# Or a local path while developing
-lar repo add --main /path/to/my-repo
+# Explicit name:
+lar repo add --name vendor https://example.com/lar-vendor/
 
-# Apps-only or both:
-lar repo add --policy apps --name vendor-apps https://example.com/lar-apps/
-lar repo add --policy both --name vendor https://example.com/lar-repo/
+# When the same pin exists in multiple sources:
+lar repo priority first-win   # default: earlier source wins
+lar repo priority last-win    # later source wins (e.g. overlay)
 
 lar repo list
 ```
 
-Policies:
-
-| Policy | Used for |
-|--------|----------|
-| `deps` | Missing dependencies during resolve / install |
-| `apps` | `lar install <id>` / `lar update` discovery |
-| `both` | Both |
-
-At most one `--main` source; it must allow deps. Missing deps are sought in: local store → main → other deps sources in config order.
+Fetch priority is **first-win** or **last-win** among configured sources (local store always wins if the pin is already present). The same sources feed `lar resolve` and `lar install <id>`; installable apps are those with `[entry]` in their manifest.
 
 ## 3. Resolve, install, audit
 
 ```bash
-lar resolve                    # fetches missing pins from deps sources
-lar install org.example.app    # needs an apps (or both) source, or a local .lar / store hit
+lar resolve                    # fetches missing pins from configured sources
+lar install org.example.app    # from a source, local .lar, or store hit
 lar audit                      # advisories against installed (or --store) pins
 ```
 
@@ -64,4 +57,4 @@ lar repo trust remove ed25519:…
 | `invalid signature` | Wrong key, or index signed with a different secret |
 | `content hash mismatch` | Hosted `.lar` does not match `index.toml` |
 | `package … is yanked` | Advisory with `yanked = true` for that pin |
-| `not found in configured sources` | Wrong URI, policy, or package not published |
+| `not found in configured sources` | Wrong URI or package not published |

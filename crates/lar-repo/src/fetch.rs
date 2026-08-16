@@ -5,8 +5,7 @@ use lar_package::inspect;
 use lar_store::{Store, StoredPackage};
 
 use crate::advisories::{verify_advisories, AdvisoriesFile};
-use crate::policy::LookupMode;
-use crate::sources::{load_sources, ordered_apps_sources, ordered_deps_sources, SourceEntry};
+use crate::sources::{load_sources, ordered_sources, SourceEntry};
 use crate::transport::{fetch_blob, parse_uri, read_advisories, read_index};
 use crate::trust::{find_trusted_key, load_trust, verify_content_hash};
 use crate::Error;
@@ -44,12 +43,12 @@ impl AdvisoryWarning {
     }
 }
 
-/// Fetch `id@version` into the store from configured sources.
+/// Fetch `id@version` into the store from configured sources
+/// (`fetch_priority`: first-win or last-win among sources).
 pub fn fetch_into_store(
     store: &Store,
     id: &str,
     version: &str,
-    mode: LookupMode,
     warn_out: &mut dyn Write,
 ) -> Result<StoredPackage> {
     if let Some(existing) = store.get(id, version)? {
@@ -58,10 +57,7 @@ pub fn fetch_into_store(
     }
 
     let sources = load_sources(store)?;
-    let ordered: Vec<&SourceEntry> = match mode {
-        LookupMode::Deps => ordered_deps_sources(&sources),
-        LookupMode::Apps => ordered_apps_sources(&sources),
-    };
+    let ordered = ordered_sources(&sources);
 
     let mut last_miss = None;
     for src in ordered {
@@ -220,10 +216,7 @@ pub fn collect_warnings_for_pin(
     let sources = load_sources(store)?;
     let trust = load_trust(store)?;
     let mut out = Vec::new();
-    // main first among all sources for audit consistency
-    let mut ordered = sources.sources.clone();
-    ordered.sort_by_key(|s| if s.main { 0u8 } else { 1u8 });
-    for src in &ordered {
+    for src in &sources.sources {
         let Ok(base) = parse_uri(&src.uri) else {
             continue;
         };
@@ -246,12 +239,7 @@ pub fn collect_warnings_for_pin(
 }
 
 /// Ensure package is in the store, fetching if needed; then warn on advisories.
-pub fn ensure_package(
-    store: &Store,
-    id: &str,
-    version: &str,
-    mode: LookupMode,
-) -> Result<StoredPackage> {
+pub fn ensure_package(store: &Store, id: &str, version: &str) -> Result<StoredPackage> {
     let mut stderr = io::stderr();
-    fetch_into_store(store, id, version, mode, &mut stderr)
+    fetch_into_store(store, id, version, &mut stderr)
 }

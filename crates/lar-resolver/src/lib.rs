@@ -369,7 +369,7 @@ mod tests {
 
     #[test]
     fn range_fetches_highest_from_deps_source() {
-        use lar_repo::{add_source, build_index, keygen, trust_add, write_index, SourcePolicy};
+        use lar_repo::{add_source, build_index, keygen, trust_add, write_index};
 
         let dir = tempdir().unwrap();
         let store = Store::open(Paths::from_prefix(dir.path().join("prefix"), false));
@@ -396,14 +396,7 @@ mod tests {
         }
         let index = build_index(&repo, &secret).unwrap();
         write_index(&repo, &index).unwrap();
-        add_source(
-            &store,
-            "main".into(),
-            repo.display().to_string(),
-            SourcePolicy::Deps,
-            true,
-        )
-        .unwrap();
+        add_source(&store, "main".into(), repo.display().to_string()).unwrap();
 
         let manifest = write_root(
             dir.path(),

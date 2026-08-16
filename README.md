@@ -23,7 +23,7 @@ cargo run -p lar -- package keygen --out ./keys
 cargo run -p lar -- store add org.example.editor-0.1.0.lar
 cargo run -p lar -- store list
 cargo run -p lar -- store remove org.example.editor 0.1.0
-cargo run -p lar -- repo add --main /path/to/repo
+cargo run -p lar -- repo add /path/to/repo
 cargo run -p lar -- install org.example.app
 cargo run -p lar -- launch org.example.app
 cargo run -p lar -- update org.example.app

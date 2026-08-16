@@ -21,8 +21,8 @@ Today `lar resolve`:
 
 - Loads a local `package.toml`
 - Treats `[dependencies]` values as **semver requirements** (exact, `^`, `~`, comparisons); rejects bare `*`
-- For each dependency id, selects the **highest matching** version among the local store and configured `deps` sources (yanked index pins excluded)
-- Fetches the chosen exact pin if missing (**main first** among `deps` sources)
+- For each dependency id, selects the **highest matching** version among the local store and configured package sources (yanked index pins excluded)
+- Fetches the chosen exact pin if missing (`fetch_priority`: first-win or last-win among sources)
 - One version per id: a later requirement that does not match the already-chosen version is a **conflict** (no backtracking)
 - Verifies signatures/hashes and emits advisory warnings (refuses yanked on new fetch)
 - Writes `lar.lock` with **exact** pins only

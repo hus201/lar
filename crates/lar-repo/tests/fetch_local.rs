@@ -8,7 +8,6 @@ use lar_package::{init_package, pack, InitOptions};
 use lar_repo::{
     add_source, audit, audit_should_fail, build_index, fetch_into_store, keygen, list_dep_versions,
     parse_advisories, sign_advisories, trust_add, write_advisories, write_index, AuditScope,
-    LookupMode, SourcePolicy,
 };
 use lar_store::{Paths, Store};
 use tempfile::tempdir;
@@ -58,13 +57,7 @@ fn local_fetch_requires_trust_and_signature() {
     let index = build_index(&repo, &secret).unwrap();
     write_index(&repo, &index).unwrap();
 
-    add_source(
-        &store,
-        "main".into(),
-        repo.display().to_string(),
-        SourcePolicy::Deps,
-        true,
-    )
+    add_source(&store, "main".into(), repo.display().to_string())
     .unwrap();
 
     let mut warn = Cursor::new(Vec::new());
@@ -72,7 +65,6 @@ fn local_fetch_requires_trust_and_signature() {
         &store,
         "org.example.lib",
         "1.0.0",
-        LookupMode::Deps,
         &mut warn,
     )
     .unwrap();
@@ -98,13 +90,7 @@ fn untrusted_key_refuses_fetch() {
     let index = build_index(&repo, &secret).unwrap();
     write_index(&repo, &index).unwrap();
 
-    add_source(
-        &store,
-        "main".into(),
-        repo.display().to_string(),
-        SourcePolicy::Deps,
-        true,
-    )
+    add_source(&store, "main".into(), repo.display().to_string())
     .unwrap();
 
     let mut warn = Cursor::new(Vec::new());
@@ -112,7 +98,6 @@ fn untrusted_key_refuses_fetch() {
         &store,
         "org.example.lib",
         "1.0.0",
-        LookupMode::Deps,
         &mut warn,
     )
     .unwrap_err();
@@ -145,13 +130,7 @@ fn bad_signature_refuses_fetch() {
     index.packages[0].signature = lar_repo::sign_content_hash(&secret_b, &content_hash).unwrap();
     write_index(&repo, &index).unwrap();
 
-    add_source(
-        &store,
-        "main".into(),
-        repo.display().to_string(),
-        SourcePolicy::Deps,
-        true,
-    )
+    add_source(&store, "main".into(), repo.display().to_string())
     .unwrap();
 
     let mut warn = Cursor::new(Vec::new());
@@ -159,7 +138,6 @@ fn bad_signature_refuses_fetch() {
         &store,
         "org.example.lib",
         "1.0.0",
-        LookupMode::Deps,
         &mut warn,
     )
     .unwrap_err();
@@ -209,13 +187,7 @@ summary = "Yanked pin"
 "#,
     );
 
-    add_source(
-        &store,
-        "main".into(),
-        repo.display().to_string(),
-        SourcePolicy::Both,
-        true,
-    )
+    add_source(&store, "main".into(), repo.display().to_string())
     .unwrap();
 
     let mut warn = Cursor::new(Vec::new());
@@ -223,7 +195,6 @@ summary = "Yanked pin"
         &store,
         "org.example.lib",
         "1.0.0",
-        LookupMode::Deps,
         &mut warn,
     )
     .unwrap_err();
@@ -264,13 +235,7 @@ url = "https://example.test/LAR-2026-0002"
 "#,
     );
 
-    add_source(
-        &store,
-        "main".into(),
-        repo.display().to_string(),
-        SourcePolicy::Deps,
-        true,
-    )
+    add_source(&store, "main".into(), repo.display().to_string())
     .unwrap();
 
     let mut warn = Cursor::new(Vec::new());
@@ -278,7 +243,6 @@ url = "https://example.test/LAR-2026-0002"
         &store,
         "org.example.lib",
         "1.0.0",
-        LookupMode::Deps,
         &mut warn,
     )
     .unwrap();
@@ -319,13 +283,7 @@ summary = "unsigned"
     )
     .unwrap();
 
-    add_source(
-        &store,
-        "main".into(),
-        repo.display().to_string(),
-        SourcePolicy::Deps,
-        true,
-    )
+    add_source(&store, "main".into(), repo.display().to_string())
     .unwrap();
 
     let mut warn = Cursor::new(Vec::new());
@@ -333,7 +291,6 @@ summary = "unsigned"
         &store,
         "org.example.lib",
         "1.0.0",
-        LookupMode::Deps,
         &mut warn,
     )
     .unwrap_err();
@@ -380,13 +337,7 @@ summary = "High severity"
     let index = build_index(&repo, &secret).unwrap();
     write_index(&repo, &index).unwrap();
 
-    add_source(
-        &store,
-        "vendor".into(),
-        repo.display().to_string(),
-        SourcePolicy::Both,
-        false,
-    )
+    add_source(&store, "vendor".into(), repo.display().to_string())
     .unwrap();
 
     let mut out = Vec::new();
@@ -423,14 +374,13 @@ fn http_fetch_works() {
     });
 
     let uri = format!("http://{addr}/");
-    add_source(&store, "http".into(), uri, SourcePolicy::Deps, true).unwrap();
+    add_source(&store, "http".into(), uri).unwrap();
 
     let mut warn = Cursor::new(Vec::new());
     let stored = fetch_into_store(
         &store,
         "org.example.lib",
         "1.0.0",
-        LookupMode::Deps,
         &mut warn,
     )
     .unwrap();
@@ -473,13 +423,7 @@ summary = "yanked"
 "#,
     );
 
-    add_source(
-        &store,
-        "main".into(),
-        repo.display().to_string(),
-        SourcePolicy::Deps,
-        true,
-    )
+    add_source(&store, "main".into(), repo.display().to_string())
     .unwrap();
 
     let versions = list_dep_versions(&store, "org.example.lib").unwrap();
@@ -488,6 +432,50 @@ summary = "yanked"
         !versions.contains(&"1.0.0".to_string()),
         "yanked 1.0.0 should be excluded: {versions:?}"
     );
+}
+
+#[test]
+fn fetch_priority_first_win_vs_last_win() {
+    use lar_repo::{set_fetch_priority, FetchPriority};
+
+    let tmp = tempdir().unwrap();
+    let prefix = tmp.path().join("prefix");
+    let store = open_prefix(&prefix);
+
+    let (public, secret, _) = keygen().unwrap();
+    trust_add(&store, &public, "test").unwrap();
+
+    let mut hashes = Vec::new();
+    for (name, body) in [("a", &b"from-a"[..]), ("b", &b"from-b"[..])] {
+        let pkg_dir = tmp.path().join(format!("pkg-{name}"));
+        let lar_path = pack_lib(&pkg_dir, "org.example.lib", "1.0.0", body);
+        let repo = tmp.path().join(format!("repo-{name}"));
+        fs::create_dir_all(repo.join("packages")).unwrap();
+        fs::copy(
+            &lar_path,
+            repo.join("packages/org.example.lib-1.0.0.lar"),
+        )
+        .unwrap();
+        let index = build_index(&repo, &secret).unwrap();
+        write_index(&repo, &index).unwrap();
+        hashes.push(index.packages[0].content_hash.clone());
+        add_source(&store, name.into(), repo.display().to_string()).unwrap();
+    }
+    assert_ne!(hashes[0], hashes[1]);
+
+    set_fetch_priority(&store, FetchPriority::FirstWin).unwrap();
+    let mut warn = Cursor::new(Vec::new());
+    let first = fetch_into_store(&store, "org.example.lib", "1.0.0", &mut warn).unwrap();
+    assert_eq!(first.content_hash, hashes[0], "first-win should take source a");
+
+    // Remove so we can fetch again from sources
+    store
+        .remove("org.example.lib", "1.0.0", false)
+        .unwrap();
+
+    set_fetch_priority(&store, FetchPriority::LastWin).unwrap();
+    let last = fetch_into_store(&store, "org.example.lib", "1.0.0", &mut warn).unwrap();
+    assert_eq!(last.content_hash, hashes[1], "last-win should take source b");
 }
 
 fn serve_file(root: &Path, mut stream: std::net::TcpStream) -> std::io::Result<()> {

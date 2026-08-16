@@ -27,21 +27,19 @@ Published source layout (local path or HTTP(S) base):
 
 ```toml
 format = 1
+fetch_priority = "first-win"    # or "last-win"
 
 [[sources]]
-name = "main"
+name = "upstream"
 uri = "/path/to/repo"           # or file://, http://, https://
-policy = "deps"                 # deps | apps | both
-main = true                     # at most one; must allow deps
 ```
 
-Fetch priority for missing dependencies:
+Fetch priority when multiple sources publish the same exact pin:
 
-1. Local store
-2. **main** (among `deps` sources)
-3. Other `deps` sources in config order
+- `first-win` (default) — first source in config order that has the pin
+- `last-win` — last source in config order that has the pin
 
-`lar install <id>` uses only sources with `apps` (after local `.lar` / store).
+Local store always wins if the pin is already present. Whether a package is installable as an app is determined by its manifest (`[entry]`), not by the source.
 
 ## Signatures and trust
 
@@ -102,8 +100,9 @@ lar package keygen [--out DIR]
 lar repo trust add <pubkey-or-file> [--comment TEXT]
 lar repo trust list
 lar repo trust remove <key_id>
-lar repo add [--policy deps|apps|both] [--main] [--name NAME] <path-or-url>
-# --main defaults policy to deps; otherwise default is both
+lar repo add [--name NAME] <path-or-url>
+lar repo priority <first-win|last-win>
+lar repo list
 lar repo list
 lar repo remove <name-or-uri>
 lar audit [--installed|--store]   # default: installed apps' pins

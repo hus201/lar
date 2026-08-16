@@ -1,13 +1,54 @@
+use std::fmt;
 use std::fs;
 use std::path::Path;
+use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
-use crate::policy::SourcePolicy;
 use crate::Error;
 use crate::Result;
 
 pub const SOURCES_FORMAT: u32 = 1;
+
+/// How to choose among sources that publish the same exact pin.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum FetchPriority {
+    /// First matching source in configuration order wins (default).
+    #[default]
+    FirstWin,
+    /// Last matching source in configuration order wins.
+    LastWin,
+}
+
+impl FetchPriority {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::FirstWin => "first-win",
+            Self::LastWin => "last-win",
+        }
+    }
+}
+
+impl fmt::Display for FetchPriority {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for FetchPriority {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        match s {
+            "first-win" | "first" => Ok(Self::FirstWin),
+            "last-win" | "last" => Ok(Self::LastWin),
+            other => Err(Error::InvalidSources(format!(
+                "invalid fetch_priority `{other}` (expected first-win or last-win)"
+            ))),
+        }
+    }
+}
 
 /// Configured package sources (`sources.toml`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -15,6 +56,9 @@ pub const SOURCES_FORMAT: u32 = 1;
 pub struct SourcesFile {
     #[serde(default = "default_format")]
     pub format: u32,
+    /// Fetch conflict rule when multiple sources publish the same pin.
+    #[serde(default)]
+    pub fetch_priority: FetchPriority,
     #[serde(default)]
     pub sources: Vec<SourceEntry>,
 }
@@ -29,9 +73,11 @@ fn default_format() -> u32 {
 pub struct SourceEntry {
     pub name: String,
     pub uri: String,
-    pub policy: SourcePolicy,
-    #[serde(default)]
-    pub main: bool,
+    /// Legacy fields from older configs; accepted on read, never written back.
+    #[serde(default, skip_serializing)]
+    policy: Option<String>,
+    #[serde(default, skip_serializing)]
+    main: Option<bool>,
 }
 
 impl SourcesFile {
@@ -42,7 +88,6 @@ impl SourcesFile {
                 self.format
             )));
         }
-        let mut mains = 0usize;
         let mut names = std::collections::BTreeSet::new();
         for src in &self.sources {
             if src.name.is_empty() || src.uri.is_empty() {
@@ -56,19 +101,6 @@ impl SourcesFile {
                     src.name
                 )));
             }
-            if src.main {
-                mains += 1;
-                if !src.policy.allows_deps() {
-                    return Err(Error::InvalidSources(
-                        "main source must allow deps (policy deps or both)".into(),
-                    ));
-                }
-            }
-        }
-        if mains > 1 {
-            return Err(Error::InvalidSources(
-                "at most one source may be marked main".into(),
-            ));
         }
         Ok(())
     }
@@ -80,6 +112,7 @@ pub fn load_sources(store: &lar_store::Store) -> Result<SourcesFile> {
     if !path.is_file() {
         return Ok(SourcesFile {
             format: SOURCES_FORMAT,
+            fetch_priority: FetchPriority::FirstWin,
             sources: Vec::new(),
         });
     }
@@ -117,28 +150,17 @@ pub fn save_sources(store: &lar_store::Store, file: &SourcesFile) -> Result<()> 
     Ok(())
 }
 
-/// Add a source; `main` must be unique.
-pub fn add_source(
-    store: &lar_store::Store,
-    name: String,
-    uri: String,
-    policy: SourcePolicy,
-    main: bool,
-) -> Result<SourceEntry> {
+/// Add a source.
+pub fn add_source(store: &lar_store::Store, name: String, uri: String) -> Result<SourceEntry> {
     let mut file = load_sources(store)?;
     if file.sources.iter().any(|s| s.name == name) {
         return Err(Error::SourceExists(name));
     }
-    if main {
-        if let Some(existing) = file.sources.iter().find(|s| s.main) {
-            return Err(Error::MainAlreadySet(existing.name.clone()));
-        }
-    }
     let entry = SourceEntry {
         name,
         uri,
-        policy,
-        main,
+        policy: None,
+        main: None,
     };
     file.sources.push(entry.clone());
     save_sources(store, &file)?;
@@ -158,30 +180,25 @@ pub fn remove_source(store: &lar_store::Store, name_or_uri: &str) -> Result<Sour
     Ok(entry)
 }
 
-/// Sources that may supply dependencies, **main first**.
-pub fn ordered_deps_sources(file: &SourcesFile) -> Vec<&SourceEntry> {
-    let mut out: Vec<&SourceEntry> = file
-        .sources
-        .iter()
-        .filter(|s| s.policy.allows_deps())
-        .collect();
-    out.sort_by_key(|s| if s.main { 0u8 } else { 1u8 });
+/// Set fetch priority (`first-win` or `last-win`).
+pub fn set_fetch_priority(store: &lar_store::Store, priority: FetchPriority) -> Result<FetchPriority> {
+    let mut file = load_sources(store)?;
+    file.fetch_priority = priority;
+    save_sources(store, &file)?;
+    Ok(priority)
+}
+
+/// Sources in the order fetch should try them (respects `fetch_priority`).
+pub fn ordered_sources(file: &SourcesFile) -> Vec<&SourceEntry> {
+    let mut out: Vec<&SourceEntry> = file.sources.iter().collect();
+    if file.fetch_priority == FetchPriority::LastWin {
+        out.reverse();
+    }
     out
 }
 
-/// Sources that may supply installable apps (config order; skip deps-only).
-pub fn ordered_apps_sources(file: &SourcesFile) -> Vec<&SourceEntry> {
-    file.sources
-        .iter()
-        .filter(|s| s.policy.allows_apps())
-        .collect()
-}
-
 /// Default source name from uri/path.
-pub fn default_source_name(uri: &str, main: bool) -> String {
-    if main {
-        return "main".into();
-    }
+pub fn default_source_name(uri: &str) -> String {
     let trimmed = uri.trim_end_matches('/');
     if let Ok(url) = url::Url::parse(trimmed) {
         if let Some(seg) = url
