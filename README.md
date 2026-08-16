@@ -1,5 +1,7 @@
 # LAR (Linux Application Runtime)
 
+**Version:** `0.8.0` (first public MVP)
+
 LAR is a Linux application runtime that decouples application lifecycle from the operating system. Packages are immutable and stored side-by-side; each application gets a resolved runtime instead of depending on `/usr/lib`.
 
 Applications remain native ELF processes. LAR does not introduce a new ABI, a custom loader, or mandatory sandboxing.
@@ -34,7 +36,7 @@ cargo run -p lar -- config
 ```
 
 Installed apps normally start from PATH exports or desktop menus after `install`. `resolve` / `runtime build` / `run` are for lockfile and package-author workflows.
-See [docs/](docs/) for the documentation index: [proposal](docs/proposal.md), [design](docs/design/), and [implementation](docs/implementation/) (package format, SxS store, resolve/lockfile, runtime, install, desktop, repos).
+See [docs/](docs/) for the documentation index: [proposal](docs/proposal.md), [design](docs/design/), [implementation](docs/implementation/), and [release 0.8.0](docs/releases/0.8.0.md).
 
 ## Build
 

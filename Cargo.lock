@@ -731,7 +731,7 @@ dependencies = [
 
 [[package]]
 name = "lar"
-version = "0.1.0"
+version = "0.8.0"
 dependencies = [
  "clap",
  "lar-manager",
@@ -746,14 +746,14 @@ dependencies = [
 
 [[package]]
 name = "lar-exec"
-version = "0.1.0"
+version = "0.8.0"
 dependencies = [
  "lar-trampoline",
 ]
 
 [[package]]
 name = "lar-manager"
-version = "0.1.0"
+version = "0.8.0"
 dependencies = [
  "lar-package",
  "lar-repo",
@@ -770,7 +770,7 @@ dependencies = [
 
 [[package]]
 name = "lar-package"
-version = "0.1.0"
+version = "0.8.0"
 dependencies = [
  "blake3",
  "semver",
@@ -785,7 +785,7 @@ dependencies = [
 
 [[package]]
 name = "lar-repo"
-version = "0.1.0"
+version = "0.8.0"
 dependencies = [
  "base64",
  "blake3",
@@ -803,7 +803,7 @@ dependencies = [
 
 [[package]]
 name = "lar-resolver"
-version = "0.1.0"
+version = "0.8.0"
 dependencies = [
  "lar-package",
  "lar-repo",
@@ -817,7 +817,7 @@ dependencies = [
 
 [[package]]
 name = "lar-runtime"
-version = "0.1.0"
+version = "0.8.0"
 dependencies = [
  "blake3",
  "lar-package",
@@ -832,7 +832,7 @@ dependencies = [
 
 [[package]]
 name = "lar-store"
-version = "0.1.0"
+version = "0.8.0"
 dependencies = [
  "lar-package",
  "serde",
@@ -843,7 +843,7 @@ dependencies = [
 
 [[package]]
 name = "lar-trampoline"
-version = "0.1.0"
+version = "0.8.0"
 dependencies = [
  "serde",
  "thiserror",

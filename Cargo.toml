@@ -13,11 +13,11 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.8.0"
 edition = "2021"
 license = "MIT"
 description = "Linux Application Runtime — side-by-side packages and resolved application runtimes"
-repository = "https://github.com/lar-linux/lar"
+repository = "https://github.com/hus201/lar"
 rust-version = "1.80"
 
 [workspace.dependencies]
