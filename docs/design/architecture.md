@@ -66,7 +66,7 @@ The SxS Store is the source of truth for packages present on the machine.
 
 ## Runtime Resolver
 
-**Status:** Partial — resolve/lockfile (including fetch, version ranges, and PubGrub), runtime compose and launch environment, install records, and desktop/PATH launch are implemented — [resolve-lockfile.md](../implementation/resolve-lockfile.md), [runtime.md](../implementation/runtime.md), [install.md](../implementation/install.md), [desktop.md](../implementation/desktop.md), [repos.md](../implementation/repos.md)
+**Status:** Implemented — MVP — [resolve-lockfile.md](../implementation/resolve-lockfile.md), [runtime.md](../implementation/runtime.md), [install.md](../implementation/install.md), [desktop.md](../implementation/desktop.md), [repos.md](../implementation/repos.md)
 
 Responsible for creating application execution environments.
 
@@ -78,8 +78,20 @@ Responsibilities:
 - Create runtime environments.
 - Launch applications.
 
-## Application lifecycle
+Known limitations:
 
-**Status:** Partial — [install.md](../implementation/install.md), [desktop.md](../implementation/desktop.md)
+- One rollback generation
+- No platform requirement model yet
+- Real-world ELF compatibility still being validated
+
+## Application Lifecycle
+
+**Status:** Implemented — MVP — [install.md](../implementation/install.md), [desktop.md](../implementation/desktop.md)
 
 Install records under `{prefix}/installs/` track what the user installed, pin store packages, and point at a composed runtime. `lar update` / `lar rollback` keep a single previous generation. Apps with `[entry]` get freedesktop `.desktop` files and PATH exports; menus and shells are the normal launch path (`lar launch` is admin/debug).
+
+Known limitations:
+
+- One rollback generation
+- No platform requirement model yet
+- Real-world ELF compatibility still being validated
