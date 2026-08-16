@@ -214,6 +214,11 @@ pub enum RuntimeCmd {
         #[arg(long)]
         json: bool,
     },
+    /// Verify a composed runtime's files/ tree against the store
+    Verify {
+        /// Runtime id or path to a runtime directory / runtime.toml
+        runtime: PathBuf,
+    },
 }
 
 #[derive(Debug, Subcommand)]

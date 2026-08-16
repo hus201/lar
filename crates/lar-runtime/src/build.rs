@@ -12,6 +12,7 @@ use lar_store::Store;
 use crate::catalog::cleanup_tmp_runtimes;
 use crate::compose::ComposeMode;
 use crate::meta::{RuntimeMeta, RuntimePackage, RuntimeRoot, RUNTIME_FORMAT};
+use crate::verify::verify_runtime_dir;
 use crate::Error;
 use crate::Result;
 
@@ -84,12 +85,15 @@ pub fn build(lock_path: &Path, store: &Store, compose: ComposeMode) -> Result<Bu
             })?;
             if let Ok(existing_meta) = toml::from_str::<RuntimeMeta>(&text) {
                 if existing_meta == meta {
-                    return Ok(BuiltRuntime {
-                        runtime_id: id,
-                        path: final_path,
-                        reused: true,
-                        meta: existing_meta,
-                    });
+                    // Reuse only when the on-disk tree still verifies.
+                    if verify_runtime_dir(store, &final_path, &existing_meta).is_ok() {
+                        return Ok(BuiltRuntime {
+                            runtime_id: id,
+                            path: final_path,
+                            reused: true,
+                            meta: existing_meta,
+                        });
+                    }
                 }
             }
         }
@@ -132,6 +136,11 @@ pub fn build(lock_path: &Path, store: &Store, compose: ComposeMode) -> Result<Bu
             path: meta_path,
             source,
         });
+    }
+
+    if let Err(err) = verify_runtime_dir(store, &tmp, &meta) {
+        let _ = fs::remove_dir_all(&tmp);
+        return Err(err);
     }
 
     if let Err(source) = fs::rename(&tmp, &final_path) {

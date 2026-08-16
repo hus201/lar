@@ -472,6 +472,21 @@ binaries = ["bin/app"]
     assert!(inspected_out.contains("runtime_id"), "{inspected_out}");
     assert!(inspected_out.contains("org.example.app"), "{inspected_out}");
 
+    let verified = lar_user(&prefix)
+        .args(["runtime", "verify", runtime_id])
+        .output()
+        .unwrap();
+    assert!(
+        verified.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&verified.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&verified.stdout).contains("ok "),
+        "{}",
+        String::from_utf8_lossy(&verified.stdout)
+    );
+
     // Default gc keeps healthy runtimes.
     let gc_keep = lar_user(&prefix).args(["runtime", "gc"]).output().unwrap();
     assert!(

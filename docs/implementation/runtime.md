@@ -8,6 +8,7 @@
 - All locked packages (including root) must be in the store with matching `content_hash`
 - Configurable compose mode (default **symlink**); same relative path from two packages → error
 - Runtime compose does not fetch from package sources (caller supplies a ready store + lockfile)
+- Filesystem verification: after compose, on reuse, via `lar runtime verify`, and as the brokenness check for default `gc`
 
 ## Compose modes
 
@@ -39,8 +40,8 @@ Content-addressed under the LAR prefix:
 
 1. Load and validate `lar.lock`.
 2. Verify every package (including root) against the store (`verify_lockfile_ready`).
-3. Compute `runtime_id`; if `{prefix}/runtimes/{runtime_id}` already exists with matching metadata, reuse it.
-4. Otherwise compose under `.tmp-runtime-*` using the selected mode, write `runtime.toml`, rename into place.
+3. Compute `runtime_id`; if `{prefix}/runtimes/{runtime_id}` already exists with matching metadata **and** passes filesystem verification, reuse it.
+4. Otherwise compose under `.tmp-runtime-*` using the selected mode, write `runtime.toml`, **verify the tree**, rename into place.
 
 `build`, `list`, `inspect`, and `gc` remove leftover `{prefix}/runtimes/.tmp-runtime-*` directories from failed or crashed builds.
 
@@ -58,7 +59,7 @@ Installed applications normally start via PATH exports or desktop menus — [des
 ## Garbage collection
 
 ```bash
-lar runtime gc          # remove broken/orphan runtimes (store packages missing or hash mismatch)
+lar runtime gc          # remove broken/orphan runtimes (store missing, hash mismatch, or filesystem verify fail)
 lar runtime gc --all    # remove every composed runtime
 ```
 
@@ -77,11 +78,13 @@ lar runtime gc
 lar runtime gc --all
 lar runtime inspect <runtime_id-or-path>
 lar runtime inspect --json <runtime_id-or-path>
+lar runtime verify <runtime_id-or-path>
 ```
 
 - `runtime list` prints `runtime_id root_id root_version compose path` (sorted by id).
 - `runtime inspect` prints root, id, compose, path, and packages (or JSON with `--json`).
-- `runtime gc` prints each removed runtime/orphan and a summary (`broken` vs `orphan` counts).
+- `runtime verify` checks each composed file against the store (symlink target / hardlink inode / copy bytes), store package integrity, and rejects unexpected files. Exit non-zero on failure.
+- `runtime gc` prints each removed runtime/orphan and a summary (`broken` vs `orphan` counts). Default gc treats verify failures as broken.
 
 ### Lockfile launch (`lar run`)
 

@@ -5,6 +5,7 @@ mod catalog;
 mod compose;
 mod error;
 mod meta;
+mod verify;
 
 pub use build::{
     build, resolve_lockfile_path, run, run_runtime_entry, runtime_id, runtime_launch_env,
@@ -14,6 +15,7 @@ pub use catalog::{gc, inspect, list, GcReport, ListedRuntime};
 pub use compose::ComposeMode;
 pub use error::Error;
 pub use meta::{RuntimeMeta, RuntimePackage, RuntimeRoot, RUNTIME_FORMAT};
+pub use verify::{verify, verify_listed, verify_runtime_dir, VerifyReport};
 
 /// Result alias for this crate.
 pub type Result<T> = std::result::Result<T, Error>;
@@ -157,6 +159,57 @@ mod tests {
         assert_eq!(by_id.path, first.path);
         let by_path = inspect(&store, &first.path).unwrap();
         assert_eq!(by_path.meta.runtime_id, first.runtime_id);
+
+        let report = verify(&store, Path::new(&first.runtime_id)).unwrap();
+        assert_eq!(report.runtime_id, first.runtime_id);
+        assert!(report.files_checked >= 2);
+    }
+
+    #[test]
+    fn verify_detects_tampered_copy_runtime() {
+        let dir = tempdir().unwrap();
+        let store = Store::open(Paths::from_prefix(dir.path().join("prefix"), false));
+        add_pkg(
+            &store,
+            dir.path(),
+            "org.example.app",
+            "0.1.0",
+            &[],
+            &[("bin/app", "#!/bin/sh\necho ok\n")],
+            Some("bin/app"),
+        );
+        let lock_path = resolve_app(&store, dir.path());
+        let built = build(&lock_path, &store, ComposeMode::Copy).unwrap();
+        verify(&store, &built.path).unwrap();
+
+        fs::write(built.path.join("files/bin/app"), b"tampered").unwrap();
+        let err = verify(&store, &built.path).unwrap_err();
+        assert!(
+            matches!(err, Error::VerifyFailed(_)),
+            "expected VerifyFailed, got {err}"
+        );
+        assert!(err.to_string().contains("bin/app"), "{err}");
+    }
+
+    #[test]
+    fn verify_detects_extra_runtime_file() {
+        let dir = tempdir().unwrap();
+        let store = Store::open(Paths::from_prefix(dir.path().join("prefix"), false));
+        add_pkg(
+            &store,
+            dir.path(),
+            "org.example.app",
+            "0.1.0",
+            &[],
+            &[("bin/app", "#!/bin/sh\necho ok\n")],
+            Some("bin/app"),
+        );
+        let lock_path = resolve_app(&store, dir.path());
+        let built = build(&lock_path, &store, ComposeMode::Symlink).unwrap();
+        fs::write(built.path.join("files/extra.txt"), b"nope").unwrap();
+        let err = verify(&store, &built.path).unwrap_err();
+        assert!(matches!(err, Error::VerifyFailed(_)));
+        assert!(err.to_string().contains("unexpected"), "{err}");
     }
 
     #[test]

@@ -1,6 +1,6 @@
 # Runtime Model
 
-**Status:** Implemented — configurable compose modes, list/inspect/gc, and shared launch environment — [runtime.md](../implementation/runtime.md)
+**Status:** Implemented — configurable compose modes, list/inspect/verify/gc, and shared launch environment — [runtime.md](../implementation/runtime.md)
 
 ## Side-by-Side Runtime
 

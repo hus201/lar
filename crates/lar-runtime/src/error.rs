@@ -27,6 +27,9 @@ pub enum Error {
     #[error("invalid runtime metadata: {0}")]
     InvalidRuntime(String),
 
+    #[error("runtime filesystem verification failed: {0}")]
+    VerifyFailed(String),
+
     #[error("invalid compose mode `{0}` (expected symlink, hardlink, or copy)")]
     InvalidComposeMode(String),
 

@@ -23,7 +23,7 @@ use lar_repo::{
 use lar_resolver::{lockfile_path_for_manifest, resolve, write_lockfile};
 use lar_runtime::{
     build as build_runtime, gc as gc_runtimes, inspect as inspect_runtime, list as list_runtimes,
-    run as run_app, ComposeMode,
+    run as run_app, verify as verify_runtime, ComposeMode,
 };
 use lar_store::{prefix, Paths, Store};
 
@@ -289,6 +289,17 @@ fn run_runtime(system: bool, command: RuntimeCmd) -> Result<(), String> {
                     println!("  {} {} {}", pkg.id, pkg.version, pkg.content_hash);
                 }
             }
+            Ok(())
+        }
+        RuntimeCmd::Verify { runtime } => {
+            let report = verify_runtime(&store, &runtime).map_err(|err| err.to_string())?;
+            println!(
+                "ok {} ({}) {} packages, {} files",
+                report.runtime_id,
+                report.compose,
+                report.packages_checked,
+                report.files_checked
+            );
             Ok(())
         }
     }

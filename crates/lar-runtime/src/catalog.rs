@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use lar_store::Store;
 
 use crate::meta::{RuntimeMeta, RUNTIME_FORMAT};
+use crate::verify::verify_runtime_dir;
 use crate::Error;
 use crate::Result;
 
@@ -181,18 +182,11 @@ fn load_listed(path: &Path) -> Result<ListedRuntime> {
 }
 
 fn runtime_is_broken(store: &Store, runtime: &ListedRuntime) -> Result<bool> {
-    if runtime.meta.packages.is_empty() {
-        return Ok(true);
+    match verify_runtime_dir(store, &runtime.path, &runtime.meta) {
+        Ok(_) => Ok(false),
+        Err(Error::VerifyFailed(_)) => Ok(true),
+        Err(err) => Err(err),
     }
-    for pkg in &runtime.meta.packages {
-        let Some(stored) = store.get(&pkg.id, &pkg.version)? else {
-            return Ok(true);
-        };
-        if stored.content_hash != pkg.content_hash {
-            return Ok(true);
-        }
-    }
-    Ok(false)
 }
 
 /// Remove leftover `{runtimes}/.tmp-runtime-*` dirs from failed or crashed builds.
