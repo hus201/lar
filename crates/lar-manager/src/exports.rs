@@ -232,8 +232,6 @@ pub fn remove(store: &Store, app_id: &str) -> Result<()> {
             }
         }
     }
-    // Also clear legacy shell shims with the old marker.
-    remove_legacy_shell_shims(store, app_id)?;
     Ok(())
 }
 
@@ -385,15 +383,6 @@ fn path_exists(path: &Path) -> bool {
 }
 
 fn is_lar_export(store: &Store, path: &Path) -> Result<bool> {
-    // Legacy shell shim.
-    if path.is_file() && !path.is_symlink() {
-        if let Ok(text) = fs::read_to_string(path) {
-            if text.lines().any(|l| l.trim().starts_with("# lar-export:")) {
-                return Ok(true);
-            }
-        }
-    }
-
     let lar_link = store.paths().libexec_lar();
     let Ok(lar_canon) = fs::canonicalize(&lar_link) else {
         return Ok(false);
@@ -426,39 +415,6 @@ fn is_lar_export(store: &Store, path: &Path) -> Result<bool> {
         return Ok(false);
     }
     Ok(false)
-}
-
-fn remove_legacy_shell_shims(store: &Store, app_id: &str) -> Result<()> {
-    let marker = format!("# lar-export: {app_id}");
-    for dir in [store.paths().share_bin(), store.paths().bin.clone()] {
-        if !dir.is_dir() {
-            continue;
-        }
-        let entries = fs::read_dir(&dir).map_err(|source| Error::Io {
-            path: dir.clone(),
-            source,
-        })?;
-        for entry in entries {
-            let entry = entry.map_err(|source| Error::Io {
-                path: dir.clone(),
-                source,
-            })?;
-            let path = entry.path();
-            if path.is_symlink() || !path.is_file() {
-                continue;
-            }
-            let Ok(text) = fs::read_to_string(&path) else {
-                continue;
-            };
-            if text.lines().any(|l| l.trim() == marker) {
-                fs::remove_file(&path).map_err(|source| Error::Io {
-                    path: path.clone(),
-                    source,
-                })?;
-            }
-        }
-    }
-    Ok(())
 }
 
 fn command_name(rel: &str) -> Result<String> {
