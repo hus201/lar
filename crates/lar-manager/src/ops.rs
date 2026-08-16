@@ -10,7 +10,7 @@ use semver::Version;
 
 use crate::desktop;
 use crate::exports;
-use crate::launch_cmd::ensure_libexec_lar;
+use crate::launch_cmd::ensure_libexec_lar_exec;
 use crate::record::{InstallPackage, InstallRecord, INSTALL_FORMAT};
 use crate::Error;
 use crate::Result;
@@ -245,7 +245,7 @@ pub fn launch(
     args: &[String],
 ) -> Result<std::process::ExitStatus> {
     cleanup_tmp_installs(store);
-    let _ = ensure_libexec_lar(store)?;
+    let _ = ensure_libexec_lar_exec(store)?;
     let record = load(store, app_id)?;
     let runtime_path = store.paths().runtimes.join(&record.runtime_id);
     if !runtime_path.is_dir() {

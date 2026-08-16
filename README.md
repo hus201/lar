@@ -45,4 +45,4 @@ cargo fmt --all
 cargo clippy --workspace --all-targets
 ```
 
-The CLI binary is `lar`.
+The CLI binaries are `lar` and `lar-exec` (PATH-export trampoline).

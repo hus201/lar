@@ -11,6 +11,10 @@ rust-version.workspace = true
 name = "lar"
 path = "src/main.rs"
 
+[[bin]]
+name = "lar-exec"
+path = "src/bin/lar_exec.rs"
+
 [dependencies]
 clap.workspace = true
 lar-package.workspace = true

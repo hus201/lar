@@ -16,6 +16,7 @@ pub use ops::{
 };
 pub use record::{InstallPackage, InstallRecord, INSTALL_FORMAT};
 pub use trampoline::exec_path_export;
+pub use launch_cmd::{ensure_libexec_lar_exec, resolve_lar_exec_path, set_lar_exec_override};
 
 /// Result alias for this crate.
 pub type Result<T> = std::result::Result<T, Error>;
@@ -34,6 +35,16 @@ mod tests {
     use super::*;
 
     fn test_store(dir: &Path) -> Store {
+        // Unit tests run under the test harness (no sibling lar-exec); point libexec at a stub.
+        let stub = dir.join("lar-exec-stub");
+        if !stub.exists() {
+            fs::write(&stub, b"#!/bin/sh\nexit 0\n").unwrap();
+            let mut perms = fs::metadata(&stub).unwrap().permissions();
+            perms.set_mode(0o755);
+            fs::set_permissions(&stub, perms).unwrap();
+        }
+        set_lar_exec_override(Some(stub));
+
         let prefix = dir.join("prefix");
         let applications = dir.join("xdg-applications");
         let bin = dir.join("xdg-bin");
@@ -403,7 +414,10 @@ mod tests {
         let meta = fs::read_to_string(&meta_path).unwrap();
         assert!(meta.contains("org.example.deskapp"), "{meta}");
         assert!(meta.contains("bin/app") || meta.contains("/files/bin/app"), "{meta}");
-        assert!(store.paths().libexec_lar().is_symlink() || store.paths().libexec_lar().exists());
+        assert!(
+            store.paths().libexec_lar_exec().is_symlink()
+                || store.paths().libexec_lar_exec().exists()
+        );
         let desktop = fs::read_to_string(&prefix_desktop).unwrap();
         assert!(
             desktop.contains(prefix_shim.to_str().unwrap())

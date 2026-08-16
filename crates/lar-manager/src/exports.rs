@@ -1,4 +1,4 @@
-//! PATH command exports: symlinks to `libexec/lar` + metadata for the trampoline.
+//! PATH command exports: symlinks to `libexec/lar-exec` + metadata for the trampoline.
 
 use std::env;
 use std::fmt;
@@ -10,7 +10,7 @@ use lar_package::load_manifest;
 use lar_store::Store;
 use serde::{Deserialize, Serialize};
 
-use crate::launch_cmd::ensure_libexec_lar;
+use crate::launch_cmd::ensure_libexec_lar_exec;
 use crate::record::InstallRecord;
 use crate::Error;
 use crate::Result;
@@ -65,9 +65,9 @@ impl fmt::Display for PathShadow {
 
 /// Publish (or refresh) PATH exports for an installed app with `[entry]`.
 ///
-/// Writes export metadata and symlinks `{prefix}/bin/{cmd}` → `libexec/lar`
-/// (session bin links to the prefix bin entry). The `lar` binary trampolines
-/// when invoked under that name and `exec`s the entry ELF.
+/// Writes export metadata and symlinks `{prefix}/bin/{cmd}` → `libexec/lar-exec`
+/// (session bin links to the prefix bin entry). `lar-exec` trampolines when invoked
+/// under that name and `exec`s the entry ELF.
 pub fn publish(store: &Store, record: &InstallRecord) -> Result<ExportPublish> {
     let stored = store
         .get(&record.id, &record.version)?
@@ -103,7 +103,7 @@ pub fn publish(store: &Store, record: &InstallRecord) -> Result<ExportPublish> {
     }
 
     remove(store, &record.id)?;
-    let lar_link = ensure_libexec_lar(store)?;
+    let lar_link = ensure_libexec_lar_exec(store)?;
 
     let prefix_bin = store.paths().share_bin();
     let session_bin = store.paths().bin.clone();
@@ -383,7 +383,7 @@ fn path_exists(path: &Path) -> bool {
 }
 
 fn is_lar_export(store: &Store, path: &Path) -> Result<bool> {
-    let lar_link = store.paths().libexec_lar();
+    let lar_link = store.paths().libexec_lar_exec();
     let Ok(lar_canon) = fs::canonicalize(&lar_link) else {
         return Ok(false);
     };

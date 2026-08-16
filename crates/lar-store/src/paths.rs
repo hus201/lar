@@ -91,9 +91,9 @@ impl Paths {
         self.prefix.join("share").join("lar").join("exports")
     }
 
-    /// Stable `lar` CLI symlink refreshed on publish/launch (`{prefix}/libexec/lar`).
-    pub fn libexec_lar(&self) -> PathBuf {
-        self.prefix.join("libexec").join("lar")
+    /// Stable `lar-exec` trampoline symlink refreshed on publish/launch (`{prefix}/libexec/lar-exec`).
+    pub fn libexec_lar_exec(&self) -> PathBuf {
+        self.prefix.join("libexec").join("lar-exec")
     }
 }
 
@@ -177,8 +177,8 @@ mod tests {
             PathBuf::from("/tmp/lar-test/share/lar/exports")
         );
         assert_eq!(
-            paths.libexec_lar(),
-            PathBuf::from("/tmp/lar-test/libexec/lar")
+            paths.libexec_lar_exec(),
+            PathBuf::from("/tmp/lar-test/libexec/lar-exec")
         );
         assert!(!paths.applications.as_os_str().is_empty());
         assert!(!paths.bin.as_os_str().is_empty());

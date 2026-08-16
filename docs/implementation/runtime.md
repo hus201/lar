@@ -46,7 +46,7 @@ Content-addressed under the LAR prefix:
 
 ## Launch environment
 
-Every LAR launch (PATH trampoline, `.desktop` → export link, `lar launch`, and `lar run`) prepares the same process environment before `exec` of the entry ELF:
+Every LAR launch (`lar-exec` PATH trampoline, `.desktop` → export link, `lar launch`, and `lar run`) prepares the same process environment before `exec` of the entry ELF:
 
 - Select the root `[entry]` default (or a listed binary).
 - Prepend runtime `bin` / `usr/bin` (and sbin variants) to `PATH`.

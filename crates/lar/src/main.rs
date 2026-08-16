@@ -1,17 +1,15 @@
 mod cli;
 
-use std::env;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::ExitCode;
 
 use clap::Parser;
 
 use cli::{Cli, Commands, PackageCmd, RepoCmd, RuntimeCmd, StoreCmd, TrustCmd};
 use lar_manager::{
-    exec_path_export, install as install_app, launch as launch_app, list as list_installs,
-    rollback as rollback_app, uninstall as uninstall_app, update as update_app, InstallSource,
-    UpdateOutcome,
+    install as install_app, launch as launch_app, list as list_installs, rollback as rollback_app,
+    uninstall as uninstall_app, update as update_app, InstallSource, UpdateOutcome,
 };
 use lar_package::{init_package, inspect, pack, validate_package, InitOptions};
 use lar_repo::{
@@ -27,10 +25,6 @@ use lar_runtime::{
 use lar_store::{prefix, Paths, Store};
 
 fn main() -> ExitCode {
-    if let Some(code) = maybe_path_export_trampoline() {
-        return code;
-    }
-
     let cli = Cli::parse();
 
     match run(cli.system, cli.command) {
@@ -38,24 +32,6 @@ fn main() -> ExitCode {
         Err(message) => {
             eprintln!("{message}");
             ExitCode::FAILURE
-        }
-    }
-}
-
-/// When `lar` is invoked via a PATH-export symlink (`argv0` basename ≠ `lar`),
-/// trampoline into the installed entry binary.
-fn maybe_path_export_trampoline() -> Option<ExitCode> {
-    let argv0 = env::args_os().next().map(PathBuf::from)?;
-    let base = argv0.file_name()?.to_str()?;
-    if base == "lar" {
-        return None;
-    }
-    let args: Vec<String> = env::args().skip(1).collect();
-    match exec_path_export(&argv0, &args) {
-        Ok(()) => Some(ExitCode::SUCCESS),
-        Err(err) => {
-            eprintln!("{err}");
-            Some(ExitCode::FAILURE)
         }
     }
 }

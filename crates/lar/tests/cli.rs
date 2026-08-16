@@ -790,7 +790,7 @@ categories = ["Utility"]
     assert!(body.contains("Name=Desk App"), "{body}");
     assert!(body.contains("Categories=Utility;"), "{body}");
     assert!(body.contains("/bin/app"), "{body}");
-    let libexec = prefix.join("libexec/lar");
+    let libexec = prefix.join("libexec/lar-exec");
     assert!(libexec.exists(), "{}", libexec.display());
 
     let prefix_shim = prefix.join("bin/app");

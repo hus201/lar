@@ -8,7 +8,7 @@ use lar_package::load_manifest;
 use lar_store::Store;
 
 use crate::exports;
-use crate::launch_cmd::{ensure_libexec_lar, shell_quote};
+use crate::launch_cmd::{ensure_libexec_lar_exec, shell_quote};
 use crate::record::InstallRecord;
 use crate::Error;
 use crate::Result;
@@ -74,7 +74,7 @@ pub fn publish(store: &Store, record: &InstallRecord) -> Result<bool> {
         )));
     }
 
-    ensure_libexec_lar(store)?;
+    ensure_libexec_lar_exec(store)?;
     let shim_str = shim.display().to_string();
     let exec = shell_quote(&shim_str);
 

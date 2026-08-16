@@ -1,12 +1,12 @@
 # LAR Desktop Launch and PATH Exports
 
-Implemented in `lar-manager` (`desktop`, `exports`, `trampoline`) and the `lar` CLI. When an installed application has `[entry]`, LAR publishes a freedesktop `.desktop` file and PATH command links so menus and shells start the entry ELF through a native trampoline (no shell script).
+Implemented in `lar-manager` (`desktop`, `exports`, `trampoline`) and the slim `lar-exec` binary. When an installed application has `[entry]`, LAR publishes a freedesktop `.desktop` file and PATH command links so menus and shells start the entry ELF through a native trampoline (no shell script; not the `lar` CLI).
 
 ## Scope (v1)
 
 - Publish/remove `.desktop` and PATH exports on install, update, force replace, rollback, and uninstall
 - Optional `[desktop]` metadata: `name`, `icon`, `categories`
-- PATH exports: symlink → `{prefix}/libexec/lar` + metadata; trampoline applies runtime env and `exec`s the entry
+- PATH exports: symlink → `{prefix}/libexec/lar-exec` + metadata; trampoline applies runtime env and `exec`s the entry
 - CLI: `lar launch <app_id> [--binary <rel>] [-- args…]` remains for debug/admin
 - Out of scope: MIME handlers, systemd services, portals, D-Bus activation, multi-binary extra desktop files, profile.d snippets
 
@@ -30,18 +30,18 @@ The `lar-` filename prefix avoids colliding with distro packages. Uninstall dele
 Command name = basename of each `[entry].binaries` path (e.g. `bin/firefox` → `firefox`). Duplicate basenames in one package are an error.
 
 ```text
-{prefix}/bin/{cmd}                      → symlink to {prefix}/libexec/lar
+{prefix}/bin/{cmd}                      → symlink to {prefix}/libexec/lar-exec
 {prefix}/share/lar/exports/{cmd}.toml   # app_id, runtime, binary (absolute paths)
 ~/.local/bin/{cmd}                      → symlink to {prefix}/bin/{cmd}   # user mode
 ```
 
-When the kernel runs `{cmd}`, it executes the `lar` binary with `argv[0]` basename `{cmd}`. Before CLI parsing, `lar` detects that case, loads the export metadata (by walking `argv[0]` / symlink targets for a `…/bin/{cmd}` under a LAR prefix), applies the shared [runtime launch environment](runtime.md#launch-environment), and `exec`s the entry binary.
+When the kernel runs `{cmd}`, it executes the `lar-exec` binary with `argv[0]` basename `{cmd}`. `lar-exec` loads the export metadata (by walking `argv[0]` / symlink targets for a `…/bin/{cmd}` under a LAR prefix), applies the shared [runtime launch environment](runtime.md#launch-environment), and `exec`s the entry binary.
 
-Export metadata is rewritten whenever the install’s `runtime_id` changes (install replace / update / rollback). `{prefix}/libexec/lar` is refreshed to the current `lar` executable on publish and `lar launch`.
+Export metadata is rewritten whenever the install’s `runtime_id` changes (install replace / update / rollback). `{prefix}/libexec/lar-exec` is refreshed to the current `lar-exec` executable on publish and `lar launch` (resolved as a sibling of `lar`, or via `LAR_EXEC`).
 
 Desktop `Exec` / `TryExec` point at the **prefix** `{prefix}/bin/{cmd}` link for the default entry binary.
 
-**Collisions:** refusing to overwrite a path that is not a LAR export (symlink chain to `libexec/lar`). Uninstall removes metadata and links for the app id.
+**Collisions:** refusing to overwrite a path that is not a LAR export (symlink chain to `libexec/lar-exec`). Uninstall removes metadata and links for the app id.
 
 **System store:** `--system` always uses prefix `/var/lib/lar`. Session `/usr/local/bin` is PATH-only, not the store.
 
