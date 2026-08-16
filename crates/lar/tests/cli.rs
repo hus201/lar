@@ -1,10 +1,69 @@
 use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::OnceLock;
 
 use tempfile::tempdir;
 
+/// Path to a built `lar-exec` for CLI tests (`LAR_EXEC`).
+fn lar_exec_path() -> &'static Path {
+    static PATH: OnceLock<PathBuf> = OnceLock::new();
+    PATH.get_or_init(|| {
+        let lar = PathBuf::from(env!("CARGO_BIN_EXE_lar"));
+        let sibling = lar.with_file_name("lar-exec");
+        if sibling.is_file() {
+            return sibling;
+        }
+
+        // `cargo test` may not place `target/*/lar-exec` until an explicit build.
+        let cargo = option_env!("CARGO").unwrap_or("cargo");
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let workspace = manifest_dir
+            .parent()
+            .and_then(|p| p.parent())
+            .expect("crates/lar -> workspace root");
+        let status = Command::new(cargo)
+            .current_dir(workspace)
+            .args(["build", "-p", "lar-exec"])
+            .status()
+            .expect("failed to spawn cargo build -p lar-exec");
+        assert!(
+            status.success(),
+            "cargo build -p lar-exec failed with {status}"
+        );
+
+        if sibling.is_file() {
+            return sibling;
+        }
+
+        let profile = if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        };
+        let mut candidates = vec![workspace.join("target").join(profile).join("lar-exec")];
+        if let Ok(td) = std::env::var("CARGO_TARGET_DIR") {
+            candidates.push(PathBuf::from(td).join(profile).join("lar-exec"));
+        }
+        if let Some(parent) = lar.parent() {
+            candidates.push(parent.join("lar-exec"));
+        }
+        for candidate in candidates {
+            if candidate.is_file() {
+                return candidate;
+            }
+        }
+        panic!(
+            "lar-exec not found after build (looked next to {} and under target/{profile}/)",
+            lar.display()
+        );
+    })
+}
+
 fn lar() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_lar"))
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_lar"));
+    cmd.env("LAR_EXEC", lar_exec_path());
+    cmd
 }
 
 /// `lar` with a user prefix and isolated session dirs under the temp root.
