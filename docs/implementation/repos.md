@@ -1,6 +1,6 @@
 # Package sources (repos)
 
-**Status:** Implemented (foundation)
+**Status:** Implemented
 
 Configured package sources distribute `.lar` archives into the local SxS store. Fetch requires Ed25519 signatures over `content_hash` and a trusted publisher key. Repos may also publish **signed** vulnerability advisories; LAR **warns** (and refuses new fetch of **yanked** pins) but never auto-deletes store packages.
 
@@ -95,6 +95,8 @@ LAR does not invent CVEs. No advisory from configured sources → no warning for
 
 ## CLI
 
+Consumer (configure sources and trust):
+
 ```bash
 lar package keygen [--out DIR]
 lar repo trust add <pubkey-or-file> [--comment TEXT]
@@ -104,12 +106,25 @@ lar repo add [--policy deps|apps|both] [--main] [--name NAME] <path-or-url>
 # --main defaults policy to deps; otherwise default is both
 lar repo list
 lar repo remove <name-or-uri>
-lar repo index <dir> --sign-key <secret-or-file>   # also signs advisories.toml if present
 lar audit [--installed|--store]   # default: installed apps' pins
 ```
+
+Publisher (maintain a local package-source directory):
+
+```bash
+lar repo init <dir> --sign-key <secret-or-file>
+lar repo publish <dir> <file.lar> --sign-key <secret-or-file>
+lar repo unpublish <dir> <package_id> <version> --sign-key <secret-or-file>
+lar repo validate <dir> [--pubkey <public-or-file>]
+lar repo index <dir> --sign-key <secret-or-file>   # full rebuild; also signs advisories.toml if present
+```
+
+Walkthrough: [Publish a package source](../guides/publish-repo.md). Clients: [Use a package source](../guides/use-repo.md).
+
+Hand-edit optional `advisories.toml` (unsigned body), then `lar repo index --sign-key` (or any publish/unpublish) to resign.
 
 Resolve and install fetch missing exact pins through this path (hash + signature + advisory checks).
 
 ## Crate
 
-Logic lives in `lar-repo` (`fetch_into_store`, sources/trust CRUD, index build, audit).
+Logic lives in `lar-repo` (`fetch_into_store`, sources/trust CRUD, publisher init/publish/unpublish/validate, index build, audit).

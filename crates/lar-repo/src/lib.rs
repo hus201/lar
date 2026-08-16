@@ -6,6 +6,7 @@ mod error;
 mod fetch;
 mod index;
 mod policy;
+mod publish;
 mod sources;
 mod transport;
 mod trust;
@@ -23,6 +24,9 @@ pub use fetch::{
 };
 pub use index::{build_index, parse_index, write_index, IndexPackage, PackageIndex, INDEX_FORMAT};
 pub use policy::{LookupMode, SourcePolicy};
+pub use publish::{
+    init_repo, publish_package, unpublish_package, validate_repo, IndexPackageInfo, ValidateReport,
+};
 pub use sources::{
     add_source, default_source_name, load_sources, ordered_apps_sources, ordered_deps_sources,
     remove_source, save_sources, SourceEntry, SourcesFile, SOURCES_FORMAT,

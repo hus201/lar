@@ -11,3 +11,5 @@ These documents describe shipped (or actively implemented) formats and subsystem
 | [install.md](install.md) | Install records via `lar-manager` (`lar install` / `list` / `update` / `rollback` / `uninstall`) |
 | [desktop.md](desktop.md) | Freedesktop `.desktop` publish, PATH exports, `lar-exec` trampoline |
 | [repos.md](repos.md) | Package sources, signatures, advisories, `lar audit` |
+
+How-tos: [../guides/](../guides/).

@@ -36,7 +36,8 @@ cargo run -p lar -- config
 ```
 
 Installed apps normally start from PATH exports or desktop menus after `install`. `resolve` / `runtime build` / `run` are for lockfile and package-author workflows.
-See [docs/](docs/) for the documentation index: [proposal](docs/proposal.md), [design](docs/design/), [implementation](docs/implementation/), and [release 0.8.0](docs/releases/0.8.0.md).
+
+Docs: [guides](docs/guides/) (package / publish / consume / install), [proposal](docs/proposal.md), [design](docs/design/), [implementation](docs/implementation/), [release 0.8.0](docs/releases/0.8.0.md).
 
 ## Build
 

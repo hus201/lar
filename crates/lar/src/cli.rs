@@ -240,6 +240,44 @@ pub enum RepoCmd {
         /// Source name or URI
         source: String,
     },
+    /// Create a local package source directory (`packages/` + empty `index.toml`)
+    Init {
+        /// Directory to initialize as a package source
+        dir: PathBuf,
+        /// Path to Ed25519 secret key file or inline `base64:…` key
+        #[arg(long)]
+        sign_key: String,
+    },
+    /// Copy a `.lar` into the source and rebuild the signed index
+    Publish {
+        /// Package source directory
+        dir: PathBuf,
+        /// Path to a `.lar` archive
+        package: PathBuf,
+        /// Path to Ed25519 secret key file or inline `base64:…` key
+        #[arg(long)]
+        sign_key: String,
+    },
+    /// Remove a package pin from the source and rebuild the signed index
+    Unpublish {
+        /// Package source directory
+        dir: PathBuf,
+        /// Package id
+        package_id: String,
+        /// Package version
+        version: String,
+        /// Path to Ed25519 secret key file or inline `base64:…` key
+        #[arg(long)]
+        sign_key: String,
+    },
+    /// Check layout, content hashes, and (optionally) signatures
+    Validate {
+        /// Package source directory
+        dir: PathBuf,
+        /// Publisher public key file or `base64:…` (required to verify signatures)
+        #[arg(long)]
+        pubkey: Option<String>,
+    },
     /// Write index.toml (and sign advisories.toml if present)
     Index {
         /// Directory containing .lar packages (and optional packages/)

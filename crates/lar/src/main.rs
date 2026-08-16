@@ -13,9 +13,9 @@ use lar_manager::{
 };
 use lar_package::{init_package, inspect, pack, validate_package, InitOptions};
 use lar_repo::{
-    add_source, audit, audit_should_fail, build_index, default_source_name, keygen, load_sources,
-    load_trust, remove_source, sign_advisories_in_dir, trust_add, trust_remove, write_index,
-    AuditScope, SourcePolicy,
+    add_source, audit, audit_should_fail, build_index, default_source_name, init_repo, keygen,
+    load_sources, load_trust, publish_package, remove_source, sign_advisories_in_dir, trust_add,
+    trust_remove, unpublish_package, validate_repo, write_index, AuditScope, SourcePolicy,
 };
 use lar_resolver::{lockfile_path_for_manifest, resolve, write_lockfile};
 use lar_runtime::{
@@ -432,6 +432,69 @@ fn run_repo(system: bool, command: RepoCmd) -> Result<(), String> {
         RepoCmd::Remove { source } => {
             let entry = remove_source(&store, &source).map_err(|e| e.to_string())?;
             println!("removed {} {}", entry.name, entry.uri);
+            Ok(())
+        }
+        RepoCmd::Init { dir, sign_key } => {
+            let secret = read_key_material(&sign_key)?;
+            let path = init_repo(&dir, &secret).map_err(|e| e.to_string())?;
+            println!("initialized {} ({})", dir.display(), path.display());
+            Ok(())
+        }
+        RepoCmd::Publish {
+            dir,
+            package,
+            sign_key,
+        } => {
+            let secret = read_key_material(&sign_key)?;
+            let (info, index) =
+                publish_package(&dir, &package, &secret).map_err(|e| e.to_string())?;
+            println!(
+                "published {} {} -> {} ({} packages in index)",
+                info.id,
+                info.version,
+                info.file,
+                index.packages.len()
+            );
+            Ok(())
+        }
+        RepoCmd::Unpublish {
+            dir,
+            package_id,
+            version,
+            sign_key,
+        } => {
+            let secret = read_key_material(&sign_key)?;
+            let index = unpublish_package(&dir, &package_id, &version, &secret)
+                .map_err(|e| e.to_string())?;
+            println!(
+                "unpublished {} {} ({} packages in index)",
+                package_id,
+                version,
+                index.packages.len()
+            );
+            Ok(())
+        }
+        RepoCmd::Validate { dir, pubkey } => {
+            let public = match pubkey {
+                Some(material) => Some(read_key_material(&material)?),
+                None => None,
+            };
+            let report = validate_repo(&dir, public.as_deref()).map_err(|e| e.to_string())?;
+            if public.is_some() {
+                println!(
+                    "ok {} ({} packages, {} advisories; signatures verified)",
+                    dir.display(),
+                    report.packages,
+                    report.advisories
+                );
+            } else {
+                println!(
+                    "ok {} ({} packages, {} advisories; layout and hashes only — pass --pubkey to verify signatures)",
+                    dir.display(),
+                    report.packages,
+                    report.advisories
+                );
+            }
             Ok(())
         }
         RepoCmd::Index { dir, sign_key } => {

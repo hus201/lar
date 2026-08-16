@@ -1824,3 +1824,144 @@ binaries = ["bin/app"]
         String::from_utf8_lossy(&list2.stdout)
     );
 }
+
+#[test]
+fn repo_init_publish_validate_unpublish() {
+    let dir = tempdir().unwrap();
+    let keys = dir.path().join("keys");
+    let repo = dir.path().join("repo");
+
+    let keygen = lar()
+        .args(["package", "keygen", "--out"])
+        .arg(&keys)
+        .output()
+        .unwrap();
+    assert!(
+        keygen.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&keygen.stderr)
+    );
+
+    let init = lar()
+        .args(["repo", "init"])
+        .arg(&repo)
+        .args(["--sign-key"])
+        .arg(keys.join("ed25519.sec"))
+        .output()
+        .unwrap();
+    assert!(
+        init.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&init.stderr)
+    );
+    assert!(repo.join("packages").is_dir());
+    assert!(repo.join("index.toml").is_file());
+
+    let lib = dir.path().join("lib");
+    assert!(lar()
+        .args([
+            "package",
+            "init",
+            "--id",
+            "org.example.lib",
+            "--name",
+            "Lib",
+            "--version",
+            "1.0.0",
+        ])
+        .arg(&lib)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    fs::write(lib.join("files/lib.txt"), b"lib").unwrap();
+    assert!(lar()
+        .args(["package", "pack"])
+        .arg(&lib)
+        .output()
+        .unwrap()
+        .status
+        .success());
+
+    let publish = lar()
+        .args(["repo", "publish"])
+        .arg(&repo)
+        .arg(lib.join("org.example.lib-1.0.0.lar"))
+        .args(["--sign-key"])
+        .arg(keys.join("ed25519.sec"))
+        .output()
+        .unwrap();
+    assert!(
+        publish.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&publish.stderr)
+    );
+    let pub_out = String::from_utf8_lossy(&publish.stdout);
+    assert!(
+        pub_out.contains("published org.example.lib 1.0.0"),
+        "{pub_out}"
+    );
+
+    let validate = lar()
+        .args(["repo", "validate"])
+        .arg(&repo)
+        .args(["--pubkey"])
+        .arg(keys.join("ed25519.pub"))
+        .output()
+        .unwrap();
+    assert!(
+        validate.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&validate.stderr)
+    );
+    let val_out = String::from_utf8_lossy(&validate.stdout);
+    assert!(val_out.contains("signatures verified"), "{val_out}");
+
+    // Corrupt the archive path listed in the index.
+    fs::remove_file(repo.join("packages/org.example.lib-1.0.0.lar")).unwrap();
+    let bad = lar()
+        .args(["repo", "validate"])
+        .arg(&repo)
+        .args(["--pubkey"])
+        .arg(keys.join("ed25519.pub"))
+        .output()
+        .unwrap();
+    assert!(!bad.status.success());
+    assert!(
+        String::from_utf8_lossy(&bad.stderr).contains("missing"),
+        "{}",
+        String::from_utf8_lossy(&bad.stderr)
+    );
+
+    // Restore via publish, then unpublish.
+    assert!(lar()
+        .args(["repo", "publish"])
+        .arg(&repo)
+        .arg(lib.join("org.example.lib-1.0.0.lar"))
+        .args(["--sign-key"])
+        .arg(keys.join("ed25519.sec"))
+        .output()
+        .unwrap()
+        .status
+        .success());
+
+    let unpublish = lar()
+        .args(["repo", "unpublish"])
+        .arg(&repo)
+        .args(["org.example.lib", "1.0.0"])
+        .args(["--sign-key"])
+        .arg(keys.join("ed25519.sec"))
+        .output()
+        .unwrap();
+    assert!(
+        unpublish.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&unpublish.stderr)
+    );
+    let un_out = String::from_utf8_lossy(&unpublish.stdout);
+    assert!(
+        un_out.contains("unpublished org.example.lib 1.0.0"),
+        "{un_out}"
+    );
+    assert!(!repo.join("packages/org.example.lib-1.0.0.lar").is_file());
+}
