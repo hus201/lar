@@ -434,7 +434,7 @@ fn resolve_metadata_from_index_without_archive() {
     fs::copy(&lar_path, repo.join("packages/org.example.lib-1.0.0.lar")).unwrap();
     let index = build_index(&repo, &secret).unwrap();
     write_index(&repo, &index).unwrap();
-    assert_eq!(index.format, 2);
+    assert_eq!(index.format, 1);
     assert_eq!(
         index.packages[0]
             .dependencies
@@ -443,7 +443,7 @@ fn resolve_metadata_from_index_without_archive() {
         Some("^2")
     );
 
-    // Remove the archive — format 2 resolve must not need it.
+    // Remove the archive — index resolve must not need it.
     fs::remove_file(repo.join("packages/org.example.lib-1.0.0.lar")).unwrap();
     add_source(&store, "main".into(), repo.display().to_string()).unwrap();
 

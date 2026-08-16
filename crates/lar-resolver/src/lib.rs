@@ -618,6 +618,81 @@ mod tests {
     }
 
     #[test]
+    fn yanked_only_match_returns_structured_yanked_error() {
+        use lar_repo::{
+            add_source, build_index, keygen, parse_advisories, sign_advisories, trust_add,
+            write_advisories, write_index,
+        };
+
+        let dir = tempdir().unwrap();
+        let store = Store::open(Paths::from_prefix(dir.path().join("prefix"), false));
+        let (public, secret, _) = keygen().unwrap();
+        trust_add(&store, &public, "").unwrap();
+
+        let repo = dir.path().join("repo");
+        fs::create_dir_all(repo.join("packages")).unwrap();
+        let pkg = dir.path().join("lib");
+        init_package(
+            &pkg,
+            &InitOptions {
+                id: "org.example.lib".into(),
+                name: "Lib".into(),
+                version: "1.0.0".into(),
+                force: false,
+            },
+        )
+        .unwrap();
+        fs::write(pkg.join("files/payload.txt"), b"yanked").unwrap();
+        pack(
+            &pkg,
+            &repo.join("packages/org.example.lib-1.0.0.lar"),
+        )
+        .unwrap();
+        let index = build_index(&repo, &secret).unwrap();
+        write_index(&repo, &index).unwrap();
+        let signed = sign_advisories(
+            parse_advisories(
+                r#"
+format = 1
+
+[[advisories]]
+id = "LAR-YANK"
+package_id = "org.example.lib"
+versions = ["1.0.0"]
+severity = "critical"
+yanked = true
+summary = "Yanked pin"
+"#,
+            )
+            .unwrap(),
+            &secret,
+        )
+        .unwrap();
+        write_advisories(&repo, &signed).unwrap();
+        add_source(&store, "main".into(), repo.display().to_string()).unwrap();
+
+        let manifest = write_root(
+            dir.path(),
+            "org.example.app",
+            "0.1.0",
+            &[("org.example.lib", "^1")],
+        );
+        let err = resolve(&manifest, &store).unwrap_err();
+        match err {
+            Error::Repo(lar_repo::Error::Yanked {
+                id,
+                version,
+                advisory,
+            }) => {
+                assert_eq!(id, "org.example.lib");
+                assert_eq!(version, "1.0.0");
+                assert_eq!(advisory, "LAR-YANK");
+            }
+            other => panic!("expected structured Yanked, got {other}"),
+        }
+    }
+
+    #[test]
     fn range_fetches_highest_from_deps_source() {
         use lar_repo::{add_source, build_index, keygen, trust_add, write_index};
 

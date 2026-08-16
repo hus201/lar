@@ -126,15 +126,61 @@ struct LarProvider<'a> {
 }
 
 #[derive(Debug)]
-struct ProviderError(String);
+enum ProviderError {
+    Yanked {
+        id: String,
+        version: String,
+        advisory: String,
+    },
+    OnlyYanked {
+        id: String,
+        pins: Vec<(String, String)>,
+    },
+    Other(String),
+}
 
 impl fmt::Display for ProviderError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
+        match self {
+            Self::Yanked {
+                id,
+                version,
+                advisory,
+            } => write!(f, "package {id} {version} is yanked ({advisory})"),
+            Self::OnlyYanked { id, pins } => write!(
+                f,
+                "package {id} has only yanked versions matching the requirement: {}",
+                format_yanked_pins(pins)
+            ),
+            Self::Other(msg) => f.write_str(msg),
+        }
     }
 }
 
 impl std::error::Error for ProviderError {}
+
+impl From<lar_repo::Error> for ProviderError {
+    fn from(err: lar_repo::Error) -> Self {
+        match err {
+            lar_repo::Error::Yanked {
+                id,
+                version,
+                advisory,
+            } => Self::Yanked {
+                id,
+                version,
+                advisory,
+            },
+            other => Self::Other(other.to_string()),
+        }
+    }
+}
+
+impl From<String> for ProviderError {
+    fn from(msg: String) -> Self {
+        Self::Other(msg)
+    }
+}
 
 impl<'a> LarProvider<'a> {
     fn available_versions(&self, id: &str) -> std::result::Result<Vec<Version>, ProviderError> {
@@ -142,9 +188,7 @@ impl<'a> LarProvider<'a> {
             return Ok(cached.clone());
         }
         let mut parsed = Vec::new();
-        for ver_str in
-            lar_repo::list_dep_versions(self.store, id).map_err(|e| ProviderError(e.to_string()))?
-        {
+        for ver_str in lar_repo::list_dep_versions(self.store, id).map_err(ProviderError::from)? {
             if let Ok(ver) = Version::parse(&ver_str) {
                 parsed.push(ver);
             }
@@ -168,7 +212,7 @@ impl<'a> LarProvider<'a> {
         }
         let mut sink = io::sink();
         let pkg = lar_repo::load_package_for_resolve(self.store, id, &version_str, &mut sink)
-            .map_err(|err| ProviderError(err.to_string()))?;
+            .map_err(ProviderError::from)?;
         self.cache.borrow_mut().insert(key, pkg.clone());
         Ok(pkg)
     }
@@ -214,8 +258,8 @@ impl<'a> DependencyProvider for LarProvider<'a> {
         }
 
         // No usable candidate — if yanked pins would have matched, say so explicitly.
-        if let Some(msg) = yanked_reason_in_range(self.store, package, range)? {
-            return Err(ProviderError(msg));
+        if let Some(err) = yanked_reason_in_range(self.store, package, range)? {
+            return Err(err);
         }
         Ok(None)
     }
@@ -244,37 +288,40 @@ impl<'a> DependencyProvider for LarProvider<'a> {
 }
 
 fn map_choose_version_error(package: &str, source: ProviderError) -> Error {
-    let msg = source.to_string();
-    // Prefer structured Yanked when the provider reported a single pin.
-    if let Some((id, version, advisory)) = parse_yanked_message(&msg) {
-        return Error::Repo(lar_repo::Error::Yanked {
+    match source {
+        ProviderError::Yanked {
             id,
             version,
             advisory,
-        });
+        } => Error::Repo(lar_repo::Error::Yanked {
+            id,
+            version,
+            advisory,
+        }),
+        ProviderError::OnlyYanked { id, pins } => Error::Unresolvable(format!(
+            "package {id} has only yanked versions matching the requirement: {}",
+            format_yanked_pins(&pins)
+        )),
+        ProviderError::Other(msg) => {
+            Error::Other(format!("choosing a version for {package} failed: {msg}"))
+        }
     }
-    if msg.contains("yanked") {
-        return Error::Unresolvable(format!("choosing a version for {package} failed: {msg}"));
-    }
-    Error::Other(format!("choosing a version for {package} failed: {msg}"))
 }
 
-fn parse_yanked_message(msg: &str) -> Option<(String, String, String)> {
-    // "package {id} {version} is yanked ({advisory})"
-    let rest = msg.strip_prefix("package ")?;
-    let (id, rest) = rest.split_once(' ')?;
-    let (version, rest) = rest.split_once(" is yanked (")?;
-    let advisory = rest.strip_suffix(')')?;
-    Some((id.to_string(), version.to_string(), advisory.to_string()))
+fn format_yanked_pins(pins: &[(String, String)]) -> String {
+    pins.iter()
+        .map(|(version, advisory)| format!("{version} ({advisory})"))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn yanked_reason_in_range(
     store: &Store,
     package: &str,
     range: &SemverRanges,
-) -> std::result::Result<Option<String>, ProviderError> {
-    let yanked = lar_repo::list_yanked_dep_versions(store, package)
-        .map_err(|e| ProviderError(e.to_string()))?;
+) -> std::result::Result<Option<ProviderError>, ProviderError> {
+    let yanked =
+        lar_repo::list_yanked_dep_versions(store, package).map_err(ProviderError::from)?;
     let mut matched: Vec<_> = yanked
         .into_iter()
         .filter(|y| {
@@ -292,20 +339,20 @@ fn yanked_reason_in_range(
             .cmp(&Version::parse(&a.version).unwrap_or_else(|_| Version::new(0, 0, 0)))
     });
     if matched.len() == 1 {
-        let y = &matched[0];
-        return Ok(Some(format!(
-            "package {package} {} is yanked ({})",
-            y.version, y.advisory
-        )));
+        let y = matched.pop().unwrap();
+        return Ok(Some(ProviderError::Yanked {
+            id: package.to_string(),
+            version: y.version,
+            advisory: y.advisory,
+        }));
     }
-    let list = matched
-        .iter()
-        .map(|y| format!("{} ({})", y.version, y.advisory))
-        .collect::<Vec<_>>()
-        .join(", ");
-    Ok(Some(format!(
-        "package {package} has only yanked versions matching the requirement: {list}"
-    )))
+    Ok(Some(ProviderError::OnlyYanked {
+        id: package.to_string(),
+        pins: matched
+            .into_iter()
+            .map(|y| (y.version, y.advisory))
+            .collect(),
+    }))
 }
 
 fn deps_to_constraints(
@@ -314,7 +361,7 @@ fn deps_to_constraints(
     let mut out = pubgrub::DependencyConstraints::default();
     for (id, req_str) in deps {
         let req = VersionReq::parse(req_str).map_err(|err| {
-            ProviderError(format!(
+            ProviderError::Other(format!(
                 "invalid version requirement `{req_str}` for {id}: {err}"
             ))
         })?;
@@ -325,7 +372,7 @@ fn deps_to_constraints(
 
 fn version_req_to_ranges(req: &VersionReq) -> std::result::Result<SemverRanges, ProviderError> {
     if req.comparators.is_empty() {
-        return Err(ProviderError(
+        return Err(ProviderError::Other(
             "wildcard version requirements are not supported".into(),
         ));
     }
@@ -362,9 +409,9 @@ fn comparator_to_ranges(c: &Comparator) -> std::result::Result<SemverRanges, Pro
         Op::Tilde => Ok(tilde_range(major, minor, patch)),
         Op::Caret => Ok(caret_range(major, minor, patch)),
         Op::Wildcard => Ok(exact_range(major, minor, patch)),
-        _ => Err(ProviderError(format!(
-            "unsupported version comparator operator in requirement"
-        ))),
+        _ => Err(ProviderError::Other(
+            "unsupported version comparator operator in requirement".into(),
+        )),
     }
 }
 

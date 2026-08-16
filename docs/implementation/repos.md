@@ -26,7 +26,7 @@ Published source layout (local path or HTTP(S) base):
 ## Package index (`index.toml`)
 
 ```toml
-format = 2
+format = 1
 
 [[packages]]
 id = "org.example.lib"
@@ -38,7 +38,7 @@ signature = "base64:…"
 dependencies = { "org.example.base" = "^1.0" }
 ```
 
-Format **2** embeds each pin’s `[dependencies]` and **signs** them with the pin (together with id/version/hash/file) so resolve can search without downloading `.lar` files. Format **1** indexes remain readable; resolve falls back to inspecting the archive for those pins. `lar repo publish` / `index` always write format 2.
+Each pin embeds `[dependencies]` and **signs** them with the pin (together with id/version/hash/file) so resolve can search without downloading `.lar` files. `lar repo publish` / `index` always write this shape.
 
 ## Source config
 
@@ -68,8 +68,7 @@ Legacy `fetch_priority` keys in older `sources.toml` files are ignored.
 ## Signatures and trust
 
 - Algorithm: Ed25519
-- **Index format 2+ package pins:** signature covers a canonical message including `id`, `version`, `content_hash`, `file`, and `dependencies` (so resolve can trust index metadata without downloading `.lar` files)
-- **Index format 1 (legacy):** signature covers UTF-8 `content_hash` only
+- **Package pins:** signature covers a canonical message including `id`, `version`, `content_hash`, `file`, and `dependencies` (so resolve can trust index metadata without downloading `.lar` files)
 - Advisory signatures: top-level `advisories.toml` fields (`content_hash`, `key_id`, `signature`) — Ed25519 over the UTF-8 `content_hash` string
 - Trust store: `{prefix}/config/trust.toml`
 

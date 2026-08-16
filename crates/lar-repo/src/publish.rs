@@ -229,7 +229,7 @@ pub fn validate_repo(dir: &Path, public_key: Option<&str>) -> Result<ValidateRep
                 archive: archive.index.content_hash,
             });
         }
-        if index.format >= 2 && archive.manifest.dependencies != pkg.dependencies {
+        if archive.manifest.dependencies != pkg.dependencies {
             return Err(Error::InvalidIndex(format!(
                 "dependencies for {} {} in index do not match archive manifest",
                 pkg.id, pkg.version
@@ -238,7 +238,7 @@ pub fn validate_repo(dir: &Path, public_key: Option<&str>) -> Result<ValidateRep
         if let Some(ref trust) = trust {
             let key = crate::trust::find_trusted_key(trust, &pkg.key_id)
                 .ok_or_else(|| Error::UntrustedKey(pkg.key_id.clone()))?;
-            crate::index::verify_index_package(&key.public_key, pkg, index.format)?;
+            crate::index::verify_index_package(&key.public_key, pkg)?;
         }
     }
 

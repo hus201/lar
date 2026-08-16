@@ -27,7 +27,7 @@ Today `lar resolve`:
   2. Select a compatible version via PubGrub (prefers highest)
   3. If that exact pin exists in multiple sources, take it from the **highest-priority** source (earlier in `sources.toml`)
   4. Never merge package contents from different sources
-- Peeks candidate metadata from the package index (format 2+; deps are part of the signed pin payload) without downloading archives; fetches only the winning set. Legacy format 1 indexes fall back to archive inspect.
+- Peeks candidate metadata from the package index (deps are part of the signed pin payload) without downloading archives; fetches only the winning set.
 - On materialize, verifies archive `content_hash` and that manifest dependencies match the index metadata used during search
 - Dependency cycles in the selected graph are rejected
 - Unsatisfiable graphs produce a PubGrub derivation report

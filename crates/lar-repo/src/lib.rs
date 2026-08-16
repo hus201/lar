@@ -23,7 +23,7 @@ pub use fetch::{
 };
 pub use index::{
     build_index, index_pin_signing_message, parse_index, sign_index_package, verify_index_package,
-    write_index, IndexPackage, PackageIndex, INDEX_FORMAT, INDEX_FORMAT_MIN,
+    write_index, IndexPackage, PackageIndex, INDEX_FORMAT,
 };
 pub use publish::{
     init_repo, publish_package, unpublish_package, validate_repo, IndexPackageInfo, ValidateReport,

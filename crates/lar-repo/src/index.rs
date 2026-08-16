@@ -9,11 +9,9 @@ use crate::Error;
 use crate::Result;
 
 /// Current index format (dependencies included in the signed pin payload).
-pub const INDEX_FORMAT: u32 = 2;
-/// Oldest index format still accepted when reading.
-pub const INDEX_FORMAT_MIN: u32 = 1;
+pub const INDEX_FORMAT: u32 = 1;
 
-/// Domain-separated prefix for index pin signatures (format 2+).
+/// Domain-separated prefix for index pin signatures.
 const INDEX_PIN_SIGNING_V1: &str = "lar-index-pin-v1";
 
 /// Published package index (`index.toml`).
@@ -41,17 +39,17 @@ pub struct IndexPackage {
     pub signature: String,
     /// Declared `[dependencies]` from the package manifest.
     ///
-    /// Present in format 2+ indexes so clients can resolve without downloading
-    /// `.lar` archives. Included in the signed pin payload for format 2+.
+    /// Included in the signed pin payload so resolve can search without
+    /// downloading `.lar` archives.
     #[serde(default)]
     pub dependencies: BTreeMap<String, String>,
 }
 
 impl PackageIndex {
     pub fn validate(&self) -> Result<()> {
-        if self.format < INDEX_FORMAT_MIN || self.format > INDEX_FORMAT {
+        if self.format != INDEX_FORMAT {
             return Err(Error::InvalidIndex(format!(
-                "unsupported format {} (supported: {INDEX_FORMAT_MIN}..={INDEX_FORMAT})",
+                "unsupported format {} (supported: {INDEX_FORMAT})",
                 self.format
             )));
         }
@@ -83,14 +81,9 @@ impl PackageIndex {
             .iter()
             .find(|p| p.id == id && p.version == version)
     }
-
-    /// True when dependency metadata in the index is authoritative for resolve.
-    pub fn has_resolve_metadata(&self) -> bool {
-        self.format >= 2
-    }
 }
 
-/// Canonical message signed for a format 2+ index pin.
+/// Canonical message signed for an index pin.
 ///
 /// Covers identity, archive location, content hash, and dependencies so resolve
 /// can trust index metadata without downloading the archive.
@@ -108,34 +101,22 @@ pub fn index_pin_signing_message(pkg: &IndexPackage) -> String {
     lines.join("\n")
 }
 
-/// Sign an index pin (format 2+ payload).
+/// Sign an index pin.
 pub fn sign_index_package(secret_key: &str, pkg: &IndexPackage) -> Result<String> {
     sign_message(secret_key, index_pin_signing_message(pkg).as_bytes())
 }
 
-/// Verify an index pin signature for the given index format.
-///
-/// Format 2+: signature covers [`index_pin_signing_message`].
-/// Format 1: signature covers `content_hash` only (legacy).
-pub fn verify_index_package(public_key: &str, pkg: &IndexPackage, index_format: u32) -> Result<()> {
-    if index_format >= 2 {
-        verify_message(
-            public_key,
-            index_pin_signing_message(pkg).as_bytes(),
-            &pkg.signature,
-        )
-        .map_err(|_| Error::BadSignature {
-            id: pkg.id.clone(),
-            version: pkg.version.clone(),
-        })
-    } else {
-        crate::trust::verify_content_hash(public_key, &pkg.content_hash, &pkg.signature).map_err(
-            |_| Error::BadSignature {
-                id: pkg.id.clone(),
-                version: pkg.version.clone(),
-            },
-        )
-    }
+/// Verify an index pin signature (covers [`index_pin_signing_message`]).
+pub fn verify_index_package(public_key: &str, pkg: &IndexPackage) -> Result<()> {
+    verify_message(
+        public_key,
+        index_pin_signing_message(pkg).as_bytes(),
+        &pkg.signature,
+    )
+    .map_err(|_| Error::BadSignature {
+        id: pkg.id.clone(),
+        version: pkg.version.clone(),
+    })
 }
 
 pub fn validate_relative_file(file: &str) -> Result<()> {

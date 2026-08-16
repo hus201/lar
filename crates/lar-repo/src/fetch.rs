@@ -56,9 +56,8 @@ impl AdvisoryWarning {
 
 /// Load package metadata for resolution without adding to the store.
 ///
-/// Store hits are read in place. Remote pins use dependency metadata from
-/// format 2+ indexes (no `.lar` download). Legacy format 1 indexes fall back to
-/// downloading and inspecting the archive, then discarding the temp blob.
+/// Store hits are read in place. Remote pins use dependency metadata from the
+/// package index (no `.lar` download).
 pub fn load_package_for_resolve(
     store: &Store,
     id: &str,
@@ -155,32 +154,13 @@ fn peek_from_source(
     version: &str,
     warn_out: &mut dyn Write,
 ) -> Result<ResolvePackage> {
-    let (base, index, pkg) = locate_verified_pin(store, src, id, version, warn_out)?;
-    if index.has_resolve_metadata() {
-        return Ok(ResolvePackage {
-            id: id.to_string(),
-            version: version.to_string(),
-            content_hash: pkg.content_hash.clone(),
-            dependencies: pkg.dependencies.clone(),
-        });
-    }
-
-    // Format 1 indexes lack dependency metadata — inspect the archive once.
-    let tmp = fetch_blob(&base, &pkg.file)?;
-    let result = (|| {
-        let archive = inspect(&tmp)?;
-        if archive.index.content_hash != pkg.content_hash {
-            return Err(Error::HashMismatch {
-                id: id.to_string(),
-                version: version.to_string(),
-                index: pkg.content_hash.clone(),
-                archive: archive.index.content_hash,
-            });
-        }
-        resolve_package_from_manifest(id, version, &pkg.content_hash, archive.manifest)
-    })();
-    let _ = fs::remove_file(&tmp);
-    result
+    let (_base, _index, pkg) = locate_verified_pin(store, src, id, version, warn_out)?;
+    Ok(ResolvePackage {
+        id: id.to_string(),
+        version: version.to_string(),
+        content_hash: pkg.content_hash.clone(),
+        dependencies: pkg.dependencies.clone(),
+    })
 }
 
 fn fetch_from_source(
@@ -263,7 +243,7 @@ fn locate_verified_pin(
 
     let key = find_trusted_key(&trust, &pkg.key_id)
         .ok_or_else(|| Error::UntrustedKey(pkg.key_id.clone()))?;
-    crate::index::verify_index_package(&key.public_key, &pkg, index.format)?;
+    crate::index::verify_index_package(&key.public_key, &pkg)?;
 
     Ok((base, index, pkg))
 }

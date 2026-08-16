@@ -16,7 +16,7 @@
 1. Load and validate the root manifest.
 2. Solve with **PubGrub** (conflict-driven clause learning; prefers highest matching semver):
    - Requirements come from each package’s `[dependencies]`
-   - Candidate metadata from the index when available (format 2+; deps are in the signed pin payload; no `.lar` download); legacy format 1 falls back to download+inspect without `store.add`
+   - Candidate metadata from the index (deps are in the signed pin payload; no `.lar` download)
    - Unsatisfiable graphs yield a derivation report
 3. Reject dependency cycles in the selected graph.
 4. Materialize: `fetch_into_store` only for winning pins; verify `content_hash` and that archive dependencies match index metadata used during search.
