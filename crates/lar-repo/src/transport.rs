@@ -10,6 +10,9 @@ use crate::index::{parse_index, PackageIndex};
 use crate::Error;
 use crate::Result;
 
+/// Well-known publisher public key at the source root (apt/dnf-style).
+pub const REPO_PUBKEY_FILE: &str = "ed25519.pub";
+
 /// Resolved base for a source uri.
 #[derive(Debug, Clone)]
 pub enum SourceBase {
@@ -56,8 +59,30 @@ pub fn read_advisories(base: &SourceBase) -> Result<AdvisoriesFile> {
     }
 }
 
+/// Read `{base}/ed25519.pub` (trimmed). Used by `lar repo add` to trust a publisher.
+pub fn read_repo_pubkey(base: &SourceBase) -> Result<String> {
+    let text = read_text(base, REPO_PUBKEY_FILE).map_err(|err| {
+        if is_missing_file(&err) {
+            Error::Other(format!(
+                "source has no {REPO_PUBKEY_FILE}; publish one with `lar repo init` / `lar repo index`, or pass --pubkey"
+            ))
+        } else {
+            err
+        }
+    })?;
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Err(Error::Other(format!("{REPO_PUBKEY_FILE} is empty")));
+    }
+    Ok(trimmed.to_string())
+}
+
 /// True only when `advisories.toml` is absent (local NotFound or HTTP 404).
 fn is_missing_advisories(err: &Error) -> bool {
+    is_missing_file(err)
+}
+
+fn is_missing_file(err: &Error) -> bool {
     match err {
         Error::Io { source, .. } => source.kind() == std::io::ErrorKind::NotFound,
         Error::Http { message, .. } => {

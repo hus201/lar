@@ -218,13 +218,28 @@ pub enum RuntimeCmd {
 
 #[derive(Debug, Subcommand)]
 pub enum RepoCmd {
-    /// Add a package source
+    /// Add a package source (fetches `ed25519.pub` and trusts on confirm)
     Add {
         /// Local path or http(s) base URI
         uri: String,
         /// Source name (default: basename/host from URI)
         #[arg(long)]
         name: Option<String>,
+        /// Trust this pubkey instead of fetching `{uri}/ed25519.pub`
+        #[arg(long)]
+        pubkey: Option<String>,
+        /// Accept trust only if the key id matches (non-interactive)
+        #[arg(long)]
+        fingerprint: Option<String>,
+        /// Trust the publisher key without prompting (scripts)
+        #[arg(long, short = 'y')]
+        yes: bool,
+        /// Comment stored with a newly trusted key
+        #[arg(long)]
+        comment: Option<String>,
+        /// Only add the source; do not fetch or trust a publisher key
+        #[arg(long)]
+        skip_trust: bool,
     },
     /// List configured package sources
     List,

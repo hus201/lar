@@ -141,6 +141,51 @@ pub fn find_trusted_key<'a>(file: &'a TrustFile, key_id: &str) -> Option<&'a Tru
     file.keys.iter().find(|k| k.id == key_id)
 }
 
+/// True when `want` matches `key_id` (full `ed25519:…` or bare hex, case-insensitive).
+pub fn fingerprint_matches(key_id: &str, want: &str) -> bool {
+    let key_id = key_id.trim();
+    let want = want.trim();
+    if want.eq_ignore_ascii_case(key_id) {
+        return true;
+    }
+    let kid_hex = key_id
+        .strip_prefix("ed25519:")
+        .or_else(|| key_id.strip_prefix("ED25519:"))
+        .unwrap_or(key_id);
+    let want_hex = want
+        .strip_prefix("ed25519:")
+        .or_else(|| want.strip_prefix("ED25519:"))
+        .unwrap_or(want);
+    kid_hex.eq_ignore_ascii_case(want_hex)
+}
+
+/// Load a publisher pubkey from `--pubkey` override or `{uri}/ed25519.pub`.
+///
+/// Returns `(public_key, key_id)`.
+pub fn load_source_pubkey(
+    uri: &str,
+    pubkey_override: Option<&str>,
+) -> Result<(String, String)> {
+    let raw = if let Some(pk) = pubkey_override {
+        let trimmed = pk.trim();
+        if trimmed.is_empty() {
+            return Err(Error::InvalidKey("public key is empty".into()));
+        }
+        trimmed.to_string()
+    } else {
+        let base = crate::transport::parse_uri(uri)?;
+        crate::transport::read_repo_pubkey(&base)?
+    };
+    let id = key_id_from_public(&raw)?;
+    Ok((raw, id))
+}
+
+/// Whether `key_id` is already in the trust store.
+pub fn is_key_trusted(store: &lar_store::Store, key_id: &str) -> Result<bool> {
+    let file = load_trust(store)?;
+    Ok(find_trusted_key(&file, key_id).is_some())
+}
+
 /// Generate an Ed25519 keypair; returns (public_key base64 form, secret_key base64 form, key_id).
 pub fn keygen() -> Result<(String, String, String)> {
     let signing = SigningKey::generate(&mut OsRng);
@@ -255,5 +300,24 @@ mod hex {
             let _ = write!(s, "{b:02x}");
         }
         s
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fingerprint_matches_accepts_hex_or_prefixed() {
+        let id = "ed25519:aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899";
+        assert!(fingerprint_matches(id, id));
+        assert!(fingerprint_matches(
+            id,
+            "AABBCCDDEEFF00112233445566778899AABBCCDDEEFF00112233445566778899"
+        ));
+        assert!(!fingerprint_matches(
+            id,
+            "ed25519:0000000000000000000000000000000000000000000000000000000000000000"
+        ));
     }
 }

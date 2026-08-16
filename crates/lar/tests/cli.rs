@@ -1790,13 +1790,128 @@ binaries = ["bin/app"]
 }
 
 #[test]
+fn repo_add_trusts_pubkey_with_yes() {
+    let dir = tempdir().unwrap();
+    let prefix = dir.path().join("prefix");
+    let keys = dir.path().join("keys");
+    let repo = dir.path().join("repo");
+
+    assert!(lar()
+        .args(["package", "keygen", "--out"])
+        .arg(&keys)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    assert!(lar()
+        .args(["repo", "init"])
+        .arg(&repo)
+        .args(["--sign-key"])
+        .arg(keys.join("ed25519.sec"))
+        .output()
+        .unwrap()
+        .status
+        .success());
+
+    let add = lar_user(&prefix)
+        .args(["repo", "add", "--name", "vendor", "--yes", "--comment", "Vendor"])
+        .arg(&repo)
+        .output()
+        .unwrap();
+    assert!(
+        add.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&add.stderr)
+    );
+    let out = String::from_utf8_lossy(&add.stdout);
+    assert!(out.contains("trusted ed25519:"), "{out}");
+    assert!(out.contains("added vendor"), "{out}");
+
+    let trust = lar_user(&prefix)
+        .args(["repo", "trust", "list"])
+        .output()
+        .unwrap();
+    assert!(trust.status.success());
+    assert!(
+        String::from_utf8_lossy(&trust.stdout).contains("Vendor"),
+        "{}",
+        String::from_utf8_lossy(&trust.stdout)
+    );
+
+    // Already trusted: add of a second name should not re-trust.
+    let repo2 = dir.path().join("repo2");
+    assert!(lar()
+        .args(["repo", "init"])
+        .arg(&repo2)
+        .args(["--sign-key"])
+        .arg(keys.join("ed25519.sec"))
+        .output()
+        .unwrap()
+        .status
+        .success());
+    let add2 = lar_user(&prefix)
+        .args(["repo", "add", "--name", "mirror", "--yes"])
+        .arg(&repo2)
+        .output()
+        .unwrap();
+    assert!(add2.status.success(), "{}", String::from_utf8_lossy(&add2.stderr));
+    let out2 = String::from_utf8_lossy(&add2.stdout);
+    assert!(!out2.contains("trusted "), "{out2}");
+    assert!(out2.contains("added mirror"), "{out2}");
+}
+
+#[test]
+fn repo_add_fingerprint_mismatch_fails() {
+    let dir = tempdir().unwrap();
+    let prefix = dir.path().join("prefix");
+    let keys = dir.path().join("keys");
+    let repo = dir.path().join("repo");
+
+    assert!(lar()
+        .args(["package", "keygen", "--out"])
+        .arg(&keys)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    assert!(lar()
+        .args(["repo", "init"])
+        .arg(&repo)
+        .args(["--sign-key"])
+        .arg(keys.join("ed25519.sec"))
+        .output()
+        .unwrap()
+        .status
+        .success());
+
+    let add = lar_user(&prefix)
+        .args([
+            "repo",
+            "add",
+            "--name",
+            "vendor",
+            "--fingerprint",
+            "ed25519:0000000000000000000000000000000000000000000000000000000000000000",
+        ])
+        .arg(&repo)
+        .output()
+        .unwrap();
+    assert!(!add.status.success());
+    assert!(
+        String::from_utf8_lossy(&add.stderr).contains("fingerprint mismatch"),
+        "{}",
+        String::from_utf8_lossy(&add.stderr)
+    );
+}
+
+#[test]
 fn repo_move_reorders_source_priority() {
     let dir = tempfile::tempdir().unwrap();
     let prefix = dir.path().join("prefix");
 
     for (name, uri) in [("a", "/tmp/a"), ("b", "/tmp/b"), ("c", "/tmp/c")] {
         let add = lar_user(&prefix)
-            .args(["repo", "add", "--name", name, uri])
+            .args(["repo", "add", "--skip-trust", "--name", name, uri])
             .output()
             .unwrap();
         assert!(
@@ -1888,6 +2003,7 @@ fn repo_init_publish_validate_unpublish() {
     );
     assert!(repo.join("packages").is_dir());
     assert!(repo.join("index.toml").is_file());
+    assert!(repo.join("ed25519.pub").is_file());
 
     let lib = dir.path().join("lib");
     assert!(lar()

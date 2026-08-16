@@ -9,6 +9,7 @@ Subsystem reference: [repos.md](../implementation/repos.md).
 ```text
 my-repo/
   index.toml
+  ed25519.pub              # published for `lar repo add`
   advisories.toml          # optional
   packages/
     org.example.lib-1.0.0.lar
@@ -18,7 +19,7 @@ my-repo/
 
 ```bash
 lar package keygen --out ./keys
-# keys/ed25519.pub  — distribute to clients (trust)
+# keys/ed25519.pub  — also written into the repo on init/index/publish
 # keys/ed25519.sec  — keep private; used to sign the index
 ```
 
@@ -28,7 +29,7 @@ lar package keygen --out ./keys
 lar repo init ./my-repo --sign-key ./keys/ed25519.sec
 ```
 
-Creates `packages/` and an empty signed `index.toml`.
+Creates `packages/`, an empty signed `index.toml`, and `ed25519.pub` for clients.
 
 ## 3. Pack and publish packages
 

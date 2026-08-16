@@ -1,6 +1,7 @@
 mod cli;
 
 use std::fs;
+use std::io::{self, IsTerminal, Write};
 use std::path::Path;
 use std::process::ExitCode;
 
@@ -13,10 +14,11 @@ use lar_manager::{
 };
 use lar_package::{init_package, inspect, pack, validate_package, InitOptions};
 use lar_repo::{
-    add_source, audit, audit_should_fail, build_index, default_source_name, init_repo, keygen,
-    load_sources, load_trust, move_source, move_source_after, move_source_before, publish_package,
-    remove_source, sign_advisories_in_dir, trust_add, trust_remove, unpublish_package,
-    validate_repo, write_index, AuditScope,
+    add_source, audit, audit_should_fail, build_index, default_source_name, fingerprint_matches,
+    init_repo, is_key_trusted, keygen, load_source_pubkey, load_sources, load_trust,
+    move_source, move_source_after, move_source_before, publish_package, remove_source,
+    sign_advisories_in_dir, trust_add, trust_remove, unpublish_package, validate_repo,
+    write_index, write_repo_pubkey_from_secret, AuditScope,
 };
 use lar_resolver::{lockfile_path_for_manifest, resolve, write_lockfile};
 use lar_runtime::{
@@ -404,8 +406,59 @@ fn run_config(system: bool, json: bool) -> Result<(), String> {
 fn run_repo(system: bool, command: RepoCmd) -> Result<(), String> {
     let store = open_store(system);
     match command {
-        RepoCmd::Add { uri, name } => {
+        RepoCmd::Add {
+            uri,
+            name,
+            pubkey,
+            fingerprint,
+            yes,
+            comment,
+            skip_trust,
+        } => {
             let name = name.unwrap_or_else(|| default_source_name(&uri));
+            if skip_trust {
+                let entry = add_source(&store, name, uri).map_err(|e| e.to_string())?;
+                println!("added {} {}", entry.name, entry.uri);
+                return Ok(());
+            }
+            let pubkey_material = match &pubkey {
+                Some(input) => Some(read_key_material(input)?),
+                None => None,
+            };
+            let (public, key_id) = load_source_pubkey(&uri, pubkey_material.as_deref())
+                .map_err(|e| e.to_string())?;
+            let already = is_key_trusted(&store, &key_id).map_err(|e| e.to_string())?;
+            if !already {
+                let accept = if let Some(ref want) = fingerprint {
+                    if !fingerprint_matches(&key_id, want) {
+                        return Err(format!(
+                            "fingerprint mismatch: source key is {key_id}, expected {want}"
+                        ));
+                    }
+                    true
+                } else if yes {
+                    true
+                } else if io::stdin().is_terminal() {
+                    eprintln!("Publisher key: {key_id}");
+                    eprint!("Trust this key and add source `{name}`? [y/N] ");
+                    let _ = io::stderr().flush();
+                    let mut line = String::new();
+                    io::stdin()
+                        .read_line(&mut line)
+                        .map_err(|e| e.to_string())?;
+                    matches!(line.trim(), "y" | "Y" | "yes" | "YES")
+                } else {
+                    return Err(format!(
+                        "publisher key {key_id} is not trusted; re-run with --yes or --fingerprint {key_id}"
+                    ));
+                };
+                if !accept {
+                    return Err("aborted".into());
+                }
+                let entry = trust_add(&store, &public, comment.unwrap_or_default())
+                    .map_err(|e| e.to_string())?;
+                println!("trusted {}", entry.id);
+            }
             let entry = add_source(&store, name, uri).map_err(|e| e.to_string())?;
             println!("added {} {}", entry.name, entry.uri);
             Ok(())
@@ -524,11 +577,14 @@ fn run_repo(system: bool, command: RepoCmd) -> Result<(), String> {
             let secret = read_key_material(&sign_key)?;
             let index = build_index(&dir, &secret).map_err(|e| e.to_string())?;
             let path = write_index(&dir, &index).map_err(|e| e.to_string())?;
+            let pub_path =
+                write_repo_pubkey_from_secret(&dir, &secret).map_err(|e| e.to_string())?;
             println!(
                 "wrote {} ({} packages)",
                 path.display(),
                 index.packages.len()
             );
+            println!("wrote {}", pub_path.display());
             if let Some(adv_path) =
                 sign_advisories_in_dir(&dir, &secret).map_err(|e| e.to_string())?
             {

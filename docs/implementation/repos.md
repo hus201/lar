@@ -19,6 +19,7 @@ Published source layout (local path or HTTP(S) base):
 
 ```text
 {base}/index.toml
+{base}/ed25519.pub              # publisher public key for `lar repo add`
 {base}/advisories.toml          # optional; absent → empty; present but invalid → error
 {base}/packages/org.example.lib-1.0.0.lar
 ```
@@ -121,13 +122,13 @@ Consumer (configure sources and trust):
 
 ```bash
 lar package keygen [--out DIR]
-lar repo trust add <pubkey-or-file> [--comment TEXT]
-lar repo trust list
-lar repo trust remove <key_id>
-lar repo add [--name NAME] <path-or-url>
+lar repo add [--name NAME] [--yes|--fingerprint ID] [--pubkey KEY] <path-or-url>
 lar repo list                          # priority order (1 = highest)
 lar repo move <source> --to N          # or --before/--after/--top/--bottom
 lar repo remove <name-or-uri>
+lar repo trust add <pubkey-or-file> [--comment TEXT]   # advanced; usually via `repo add`
+lar repo trust list
+lar repo trust remove <key_id>
 lar audit [--installed|--store]   # default: installed apps' pins
 ```
 

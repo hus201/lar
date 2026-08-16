@@ -26,17 +26,19 @@ pub use index::{
     write_index, IndexPackage, PackageIndex, INDEX_FORMAT,
 };
 pub use publish::{
-    init_repo, publish_package, unpublish_package, validate_repo, IndexPackageInfo, ValidateReport,
+    init_repo, publish_package, unpublish_package, validate_repo, write_repo_pubkey,
+    write_repo_pubkey_from_secret, IndexPackageInfo, ValidateReport,
 };
 pub use sources::{
     add_source, default_source_name, load_sources, move_source, move_source_after,
     move_source_before, ordered_sources, remove_source, save_sources, SourceEntry, SourcesFile,
     SOURCES_FORMAT,
 };
-pub use transport::{parse_uri, read_advisories, read_index, SourceBase};
+pub use transport::{parse_uri, read_advisories, read_index, read_repo_pubkey, SourceBase, REPO_PUBKEY_FILE};
 pub use trust::{
-    key_id_from_public, keygen, load_trust, save_trust, sign_content_hash, sign_message, trust_add,
-    trust_remove, verify_content_hash, verify_message, TrustFile, TrustedKey, TRUST_FORMAT,
+    fingerprint_matches, is_key_trusted, key_id_from_public, keygen, load_source_pubkey, load_trust,
+    save_trust, sign_content_hash, sign_message, trust_add, trust_remove, verify_content_hash,
+    verify_message, TrustFile, TrustedKey, TRUST_FORMAT,
 };
 pub use versions::{list_dep_versions, list_yanked_dep_versions, YankedDepVersion};
 

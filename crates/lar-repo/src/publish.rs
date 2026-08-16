@@ -44,13 +44,32 @@ fn public_from_secret(secret_key: &str) -> Result<String> {
     ))
 }
 
+/// Derive the publisher public key from a secret and write `{dir}/ed25519.pub`.
+pub fn write_repo_pubkey_from_secret(dir: &Path, secret_key: &str) -> Result<PathBuf> {
+    let public = public_from_secret(secret_key)?;
+    write_repo_pubkey(dir, &public)
+}
+
 fn package_filename(id: &str, version: &str) -> String {
     format!("{id}-{version}.lar")
 }
 
+/// Write `{dir}/ed25519.pub` for consumers (`lar repo add` fetches this).
+pub fn write_repo_pubkey(dir: &Path, public_key: &str) -> Result<PathBuf> {
+    let path = dir.join(crate::transport::REPO_PUBKEY_FILE);
+    let body = format!("{}\n", public_key.trim());
+    fs::write(&path, body).map_err(|source| Error::Io {
+        path: path.clone(),
+        source,
+    })?;
+    Ok(path)
+}
+
 fn rebuild_and_sign(dir: &Path, secret_key: &str) -> Result<(PackageIndex, Option<PathBuf>)> {
+    let public = public_from_secret(secret_key)?;
     let index = build_index(dir, secret_key)?;
     write_index(dir, &index)?;
+    write_repo_pubkey(dir, &public)?;
     let adv = sign_advisories_in_dir(dir, secret_key)?;
     Ok((index, adv))
 }
@@ -72,12 +91,14 @@ pub fn init_repo(dir: &Path, secret_key: &str) -> Result<PathBuf> {
     }
 
     // Ensure the secret key is valid (and derive key material) before writing.
-    let _public = public_from_secret(secret_key)?;
+    let public = public_from_secret(secret_key)?;
     let index = PackageIndex {
         format: INDEX_FORMAT,
         packages: Vec::new(),
     };
-    write_index(dir, &index)
+    write_index(dir, &index)?;
+    write_repo_pubkey(dir, &public)?;
+    Ok(dir.join("index.toml"))
 }
 
 /// Copy a `.lar` into `dir/packages/` and rebuild+sign the index (and advisories).

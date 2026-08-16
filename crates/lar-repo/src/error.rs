@@ -24,7 +24,7 @@ pub enum Error {
         advisory: String,
     },
 
-    #[error("untrusted key_id `{0}` (add it with `lar repo trust add`)")]
+    #[error("untrusted key_id `{0}` (trust it with `lar repo add` or `lar repo trust add`)")]
     UntrustedKey(String),
 
     #[error("invalid signature for {id} {version}")]
