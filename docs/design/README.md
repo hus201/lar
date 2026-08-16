@@ -15,7 +15,7 @@ Design docs describe *what* LAR is and *why*. Implementation details live under 
 |-----|--------|--------|
 | [introduction.md](introduction.md) | Purpose and scope | Design |
 | [principles.md](principles.md) | Native Linux, immutability, independence | Design |
-| [architecture.md](architecture.md) | Package sources, store, resolver, install | Partial |
+| [architecture.md](architecture.md) | Package sources, store, resolver, install | MVP implemented |
 | [packages.md](packages.md) | Package model, identity, manifest | Implemented |
 | [dependency-resolution.md](dependency-resolution.md) | Resolving dependencies | Implemented |
 | [runtime.md](runtime.md) | Runtime composition, linking, launch | Implemented |

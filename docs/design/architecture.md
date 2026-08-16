@@ -1,6 +1,6 @@
 # Architecture Overview
 
-**Status:** Partial — SxS store, resolver (lockfile + version ranges + PubGrub), runtime, install records (including update/rollback), package sources (fetch/signatures/advisories), and desktop/PATH launch (`.desktop` + exports) are implemented.
+**Status:** MVP implemented
 
 LAR consists of four major components.
 
