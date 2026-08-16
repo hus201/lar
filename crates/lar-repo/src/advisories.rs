@@ -117,8 +117,7 @@ impl AdvisoriesFile {
                     .into(),
             ));
         }
-        if !self.content_hash.starts_with("blake3:") || self.content_hash.len() <= "blake3:".len()
-        {
+        if !self.content_hash.starts_with("blake3:") || self.content_hash.len() <= "blake3:".len() {
             return Err(Error::InvalidAdvisories(
                 "advisories content_hash must look like blake3:<hex>".into(),
             ));

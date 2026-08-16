@@ -412,15 +412,17 @@ mod tests {
         assert!(meta_path.is_file(), "{}", meta_path.display());
         let meta = fs::read_to_string(&meta_path).unwrap();
         assert!(meta.contains("org.example.deskapp"), "{meta}");
-        assert!(meta.contains("bin/app") || meta.contains("/files/bin/app"), "{meta}");
+        assert!(
+            meta.contains("bin/app") || meta.contains("/files/bin/app"),
+            "{meta}"
+        );
         assert!(
             store.paths().libexec_lar_exec().is_symlink()
                 || store.paths().libexec_lar_exec().exists()
         );
         let desktop = fs::read_to_string(&prefix_desktop).unwrap();
         assert!(
-            desktop.contains(prefix_shim.to_str().unwrap())
-                || desktop.contains("/bin/app"),
+            desktop.contains(prefix_shim.to_str().unwrap()) || desktop.contains("/bin/app"),
             "{desktop}"
         );
 
@@ -489,11 +491,7 @@ mod tests {
         );
 
         // Host dir first so it shadows the LAR session export.
-        let path = format!(
-            "{}:{}",
-            host_bin.display(),
-            store.paths().bin.display()
-        );
+        let path = format!("{}:{}", host_bin.display(), store.paths().bin.display());
         std::env::set_var("PATH", &path);
 
         let outcome = install(
@@ -540,6 +538,15 @@ mod tests {
             .applications
             .join("lar-org.example.libonly.desktop")
             .exists());
-        assert!(!store.paths().share_bin().exists() || store.paths().share_bin().read_dir().unwrap().next().is_none());
+        assert!(
+            !store.paths().share_bin().exists()
+                || store
+                    .paths()
+                    .share_bin()
+                    .read_dir()
+                    .unwrap()
+                    .next()
+                    .is_none()
+        );
     }
 }

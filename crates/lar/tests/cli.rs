@@ -159,10 +159,7 @@ fn store_add_and_list() {
         String::from_utf8_lossy(&add.stderr)
     );
 
-    let list = lar_user(&prefix)
-        .args(["store", "list"])
-        .output()
-        .unwrap();
+    let list = lar_user(&prefix).args(["store", "list"]).output().unwrap();
     assert!(list.status.success());
     let stdout = String::from_utf8_lossy(&list.stdout);
     assert!(stdout.contains("org.example.editor"), "{stdout}");
@@ -179,10 +176,7 @@ fn store_add_and_list() {
         String::from_utf8_lossy(&remove.stderr)
     );
 
-    let list_after = lar_user(&prefix)
-        .args(["store", "list"])
-        .output()
-        .unwrap();
+    let list_after = lar_user(&prefix).args(["store", "list"]).output().unwrap();
     assert!(list_after.status.success());
     assert!(String::from_utf8_lossy(&list_after.stdout)
         .trim()
@@ -388,11 +382,7 @@ binaries = ["bin/app"]
     );
     assert!(stdout.contains("runtimes"), "{stdout}");
 
-    let run = lar_user(&prefix)
-        .args(["run"])
-        .arg(&app)
-        .output()
-        .unwrap();
+    let run = lar_user(&prefix).args(["run"]).arg(&app).output().unwrap();
     assert!(
         run.status.success(),
         "stderr={}",
@@ -424,10 +414,7 @@ binaries = ["bin/app"]
     assert!(inspected_out.contains("org.example.app"), "{inspected_out}");
 
     // Default gc keeps healthy runtimes.
-    let gc_keep = lar_user(&prefix)
-        .args(["runtime", "gc"])
-        .output()
-        .unwrap();
+    let gc_keep = lar_user(&prefix).args(["runtime", "gc"]).output().unwrap();
     assert!(
         gc_keep.status.success(),
         "stderr={}",
@@ -450,10 +437,7 @@ binaries = ["bin/app"]
         .unwrap()
         .status
         .success());
-    let gc_broken = lar_user(&prefix)
-        .args(["runtime", "gc"])
-        .output()
-        .unwrap();
+    let gc_broken = lar_user(&prefix).args(["runtime", "gc"]).output().unwrap();
     assert!(
         gc_broken.status.success(),
         "stderr={}",
@@ -666,10 +650,7 @@ binaries = ["bin/app"]
         "{install_out}"
     );
 
-    let list = lar_user(&prefix)
-        .args(["list"])
-        .output()
-        .unwrap();
+    let list = lar_user(&prefix).args(["list"]).output().unwrap();
     assert!(list.status.success());
     let list_out = String::from_utf8_lossy(&list.stdout);
     assert!(list_out.contains("org.example.app"), "{list_out}");
@@ -696,10 +677,7 @@ binaries = ["bin/app"]
         String::from_utf8_lossy(&uninstall.stderr)
     );
 
-    let list_after = lar_user(&prefix)
-        .args(["list"])
-        .output()
-        .unwrap();
+    let list_after = lar_user(&prefix).args(["list"]).output().unwrap();
     assert!(list_after.status.success());
     assert!(String::from_utf8_lossy(&list_after.stdout)
         .trim()
@@ -781,8 +759,7 @@ categories = ["Utility"]
         String::from_utf8_lossy(&install.stderr)
     );
 
-    let prefix_desktop = prefix
-        .join("share/applications/org.example.desk.desktop");
+    let prefix_desktop = prefix.join("share/applications/org.example.desk.desktop");
     let xdg_desktop = xdg.join("applications/lar-org.example.desk.desktop");
     assert!(prefix_desktop.is_file(), "{}", prefix_desktop.display());
     assert!(xdg_desktop.is_file(), "{}", xdg_desktop.display());
@@ -1376,10 +1353,7 @@ url = "https://example.test/LAR-2026-0099"
         "expected advisory warning, stderr={stderr}"
     );
 
-    let list = lar_user(&prefix)
-        .args(["store", "list"])
-        .output()
-        .unwrap();
+    let list = lar_user(&prefix).args(["store", "list"]).output().unwrap();
     assert!(list.status.success());
     assert!(
         String::from_utf8_lossy(&list.stdout).contains("org.example.lib"),
@@ -1615,10 +1589,7 @@ binaries = ["bin/app"]
         "{stdout}"
     );
 
-    let list = lar_user(&prefix)
-        .args(["list"])
-        .output()
-        .unwrap();
+    let list = lar_user(&prefix).args(["list"]).output().unwrap();
     assert!(list.status.success());
     assert!(
         String::from_utf8_lossy(&list.stdout).contains("org.example.vendorapp"),
@@ -1626,10 +1597,7 @@ binaries = ["bin/app"]
         String::from_utf8_lossy(&list.stdout)
     );
 
-    let store_list = lar_user(&prefix)
-        .args(["store", "list"])
-        .output()
-        .unwrap();
+    let store_list = lar_user(&prefix).args(["store", "list"]).output().unwrap();
     assert!(
         String::from_utf8_lossy(&store_list.stdout).contains("org.example.vendorapp"),
         "app should be fetched into the store"
@@ -1763,10 +1731,7 @@ binaries = ["bin/app"]
         String::from_utf8_lossy(&up_to_date.stdout)
     );
 
-    let list = lar_user(&prefix)
-        .args(["list"])
-        .output()
-        .unwrap();
+    let list = lar_user(&prefix).args(["list"]).output().unwrap();
     assert!(String::from_utf8_lossy(&list.stdout).contains("0.2.0"));
 
     // previous.toml pins still block store remove
@@ -1793,10 +1758,7 @@ binaries = ["bin/app"]
     let rb = String::from_utf8_lossy(&rollback.stdout);
     assert!(rb.contains("rolled back") && rb.contains("0.1.0"), "{rb}");
 
-    let list2 = lar_user(&prefix)
-        .args(["list"])
-        .output()
-        .unwrap();
+    let list2 = lar_user(&prefix).args(["list"]).output().unwrap();
     assert!(
         String::from_utf8_lossy(&list2.stdout).contains("0.1.0"),
         "{}",

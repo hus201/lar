@@ -35,10 +35,7 @@ pub fn load_export_meta(prefix: &Path, cmd: &str) -> Result<Option<ExportMeta>> 
         source,
     })?;
     let meta: ExportMeta = toml::from_str(&text).map_err(|err| {
-        Error::Other(format!(
-            "invalid export metadata {}: {err}",
-            path.display()
-        ))
+        Error::Other(format!("invalid export metadata {}: {err}", path.display()))
     })?;
     if meta.format != EXPORT_FORMAT {
         return Err(Error::Other(format!(

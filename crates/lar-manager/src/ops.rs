@@ -261,7 +261,10 @@ pub fn launch(
             version: record.version.clone(),
         })?;
     let manifest = load_manifest(&root.path.join("package.toml"))?;
-    let entry = manifest.entry.as_ref().ok_or_else(|| Error::NoEntry(app_id.to_string()))?;
+    let entry = manifest
+        .entry
+        .as_ref()
+        .ok_or_else(|| Error::NoEntry(app_id.to_string()))?;
     if let Some(rel) = binary {
         if !entry.binaries.iter().any(|b| b == rel) {
             return Err(Error::UnknownBinary {

@@ -7,9 +7,7 @@ mod store;
 
 pub use error::Error;
 pub use install_pins::install_referrers;
-pub use paths::{
-    prefix, resolve_applications_dir, resolve_bin_dir, Paths, LAR_USER_PREFIX_ENV,
-};
+pub use paths::{prefix, resolve_applications_dir, resolve_bin_dir, Paths, LAR_USER_PREFIX_ENV};
 pub use store::{Store, StoredPackage};
 
 /// Result alias for this crate.
