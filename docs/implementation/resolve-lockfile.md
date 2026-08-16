@@ -18,11 +18,11 @@
    - Same id already chosen and matches → continue
    - Same id already chosen and does not match → conflict (backtrack)
    - Otherwise try candidates from `list_dep_versions` filtered by the requirement
-   - Load each candidate’s metadata via peek (store hit or download+inspect **without** `store.add`); cache in-memory
+   - Load each candidate’s metadata from the index when available (format 2+; no `.lar` download); legacy format 1 falls back to download+inspect without `store.add`
    - On conflict / unsatisfiable / missing further down, undo assignments along a trail and try the next-older candidate
    - Cycles abort that path immediately (not retried as a soft search failure)
    - If several candidates fail, the error lists each tried version and why
-3. Materialize: `fetch_into_store` only for the winning pins (failed probes never enter the store).
+3. Materialize: `fetch_into_store` only for winning pins; verify `content_hash` and that archive dependencies match index metadata used during search.
 4. Write `lar.lock` next to the root `package.toml`.
 
 ## Lockfile format (`lar.lock`)

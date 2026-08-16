@@ -21,7 +21,10 @@ pub use fetch::{
     collect_warnings_for_pin, emit_store_hit_warnings, ensure_package, fetch_into_store,
     load_package_for_resolve, AdvisoryWarning, ResolvePackage,
 };
-pub use index::{build_index, parse_index, write_index, IndexPackage, PackageIndex, INDEX_FORMAT};
+pub use index::{
+    build_index, parse_index, write_index, IndexPackage, PackageIndex, INDEX_FORMAT,
+    INDEX_FORMAT_MIN,
+};
 pub use publish::{
     init_repo, publish_package, unpublish_package, validate_repo, IndexPackageInfo, ValidateReport,
 };

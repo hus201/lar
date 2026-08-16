@@ -385,6 +385,79 @@ summary = "yanked"
 }
 
 #[test]
+fn resolve_metadata_from_index_without_archive() {
+    use lar_package::load_manifest;
+    use lar_repo::load_package_for_resolve;
+
+    let tmp = tempdir().unwrap();
+    let prefix = tmp.path().join("prefix");
+    let store = open_prefix(&prefix);
+
+    let (public, secret, _) = keygen().unwrap();
+    trust_add(&store, &public, "test").unwrap();
+
+    let pkg = tmp.path().join("pkg");
+    init_package(
+        &pkg,
+        &InitOptions {
+            id: "org.example.lib".into(),
+            name: "Lib".into(),
+            version: "1.0.0".into(),
+            force: false,
+        },
+    )
+    .unwrap();
+    fs::write(pkg.join("files/payload.txt"), b"meta").unwrap();
+    let mut manifest = load_manifest(&pkg.join("package.toml")).unwrap();
+    manifest
+        .dependencies
+        .insert("org.example.base".into(), "^2".into());
+    fs::write(
+        pkg.join("package.toml"),
+        toml::to_string_pretty(&manifest).unwrap(),
+    )
+    .unwrap();
+    let lar_path = pkg.join("org.example.lib-1.0.0.lar");
+    pack(&pkg, &lar_path).unwrap();
+
+    let repo = tmp.path().join("repo");
+    fs::create_dir_all(repo.join("packages")).unwrap();
+    fs::copy(&lar_path, repo.join("packages/org.example.lib-1.0.0.lar")).unwrap();
+    let index = build_index(&repo, &secret).unwrap();
+    write_index(&repo, &index).unwrap();
+    assert_eq!(index.format, 2);
+    assert_eq!(
+        index.packages[0]
+            .dependencies
+            .get("org.example.base")
+            .map(String::as_str),
+        Some("^2")
+    );
+
+    // Remove the archive — format 2 resolve must not need it.
+    fs::remove_file(repo.join("packages/org.example.lib-1.0.0.lar")).unwrap();
+    add_source(&store, "main".into(), repo.display().to_string()).unwrap();
+
+    let mut warn = Cursor::new(Vec::new());
+    let meta = load_package_for_resolve(&store, "org.example.lib", "1.0.0", &mut warn).unwrap();
+    assert_eq!(
+        meta.dependencies
+            .get("org.example.base")
+            .map(String::as_str),
+        Some("^2")
+    );
+
+    let err = fetch_into_store(&store, "org.example.lib", "1.0.0", &mut warn).unwrap_err();
+    assert!(
+        err.to_string().contains("org.example.lib")
+            || err.to_string().contains("No such file")
+            || err.to_string().contains("not found")
+            || err.to_string().contains("IO"),
+        "fetch should fail without archive: {err}"
+    );
+}
+
+#[test]
 fn highest_priority_source_wins_for_same_pin() {
     let tmp = tempdir().unwrap();
     let prefix = tmp.path().join("prefix");

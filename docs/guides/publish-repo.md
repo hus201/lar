@@ -38,7 +38,7 @@ lar repo publish ./my-repo ./my-lib/org.example.lib-1.0.0.lar \
   --sign-key ./keys/ed25519.sec
 ```
 
-`publish` copies the archive into `packages/{id}-{version}.lar`, rebuilds `index.toml`, and re-signs `advisories.toml` when that file exists.
+`publish` copies the archive into `packages/{id}-{version}.lar`, rebuilds `index.toml` (format 2, including dependency metadata for clients), and re-signs `advisories.toml` when that file exists.
 
 To remove a pin:
 

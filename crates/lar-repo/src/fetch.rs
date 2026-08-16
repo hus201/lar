@@ -6,8 +6,9 @@ use lar_package::{inspect, load_manifest, PackageManifest};
 use lar_store::{Store, StoredPackage};
 
 use crate::advisories::{verify_advisories, AdvisoriesFile};
+use crate::index::{IndexPackage, PackageIndex};
 use crate::sources::{load_sources, ordered_sources, SourceEntry};
-use crate::transport::{fetch_blob, parse_uri, read_advisories, read_index};
+use crate::transport::{fetch_blob, parse_uri, read_advisories, read_index, SourceBase};
 use crate::trust::{find_trusted_key, load_trust, verify_content_hash};
 use crate::Error;
 use crate::Result;
@@ -55,8 +56,9 @@ impl AdvisoryWarning {
 
 /// Load package metadata for resolution without adding to the store.
 ///
-/// Store hits are read in place. Missing pins are downloaded, signature-checked,
-/// and inspected, then the temporary blob is discarded.
+/// Store hits are read in place. Remote pins use dependency metadata from
+/// format 2+ indexes (no `.lar` download). Legacy format 1 indexes fall back to
+/// downloading and inspecting the archive, then discarding the temp blob.
 pub fn load_package_for_resolve(
     store: &Store,
     id: &str,
@@ -153,18 +155,29 @@ fn peek_from_source(
     version: &str,
     warn_out: &mut dyn Write,
 ) -> Result<ResolvePackage> {
-    let (tmp, index_hash) = download_verified_blob(store, src, id, version, warn_out)?;
+    let (base, index, pkg) = locate_verified_pin(store, src, id, version, warn_out)?;
+    if index.has_resolve_metadata() {
+        return Ok(ResolvePackage {
+            id: id.to_string(),
+            version: version.to_string(),
+            content_hash: pkg.content_hash.clone(),
+            dependencies: pkg.dependencies.clone(),
+        });
+    }
+
+    // Format 1 indexes lack dependency metadata — inspect the archive once.
+    let tmp = fetch_blob(&base, &pkg.file)?;
     let result = (|| {
         let archive = inspect(&tmp)?;
-        if archive.index.content_hash != index_hash {
+        if archive.index.content_hash != pkg.content_hash {
             return Err(Error::HashMismatch {
                 id: id.to_string(),
                 version: version.to_string(),
-                index: index_hash.clone(),
+                index: pkg.content_hash.clone(),
                 archive: archive.index.content_hash,
             });
         }
-        resolve_package_from_manifest(id, version, &index_hash, archive.manifest)
+        resolve_package_from_manifest(id, version, &pkg.content_hash, archive.manifest)
     })();
     let _ = fs::remove_file(&tmp);
     result
@@ -177,7 +190,9 @@ fn fetch_from_source(
     version: &str,
     warn_out: &mut dyn Write,
 ) -> Result<StoredPackage> {
-    let (tmp, index_hash) = download_verified_blob(store, src, id, version, warn_out)?;
+    let (base, _index, pkg) = locate_verified_pin(store, src, id, version, warn_out)?;
+    let tmp = fetch_blob(&base, &pkg.file)?;
+    let index_hash = pkg.content_hash.clone();
     let result = (|| {
         let archive = inspect(&tmp)?;
         if archive.index.content_hash != index_hash {
@@ -216,13 +231,14 @@ fn fetch_from_source(
     result
 }
 
-fn download_verified_blob(
+/// Find `id@version` in `src`, check advisories, and verify the index signature.
+fn locate_verified_pin(
     store: &Store,
     src: &SourceEntry,
     id: &str,
     version: &str,
     warn_out: &mut dyn Write,
-) -> Result<(std::path::PathBuf, String)> {
+) -> Result<(SourceBase, PackageIndex, IndexPackage)> {
     let base = parse_uri(&src.uri)?;
     let index = read_index(&base)?;
     let trust = load_trust(store)?;
@@ -230,6 +246,7 @@ fn download_verified_blob(
     verify_advisories(&advisories, &trust)?;
     let pkg = index
         .find(id, version)
+        .cloned()
         .ok_or_else(|| Error::PackageNotFound {
             id: id.to_string(),
             version: version.to_string(),
@@ -253,8 +270,7 @@ fn download_verified_blob(
         }
     })?;
 
-    let tmp = fetch_blob(&base, &pkg.file)?;
-    Ok((tmp, pkg.content_hash.clone()))
+    Ok((base, index, pkg))
 }
 
 fn check_advisories_for_fetch(

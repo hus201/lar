@@ -23,6 +23,23 @@ Published source layout (local path or HTTP(S) base):
 {base}/packages/org.example.lib-1.0.0.lar
 ```
 
+## Package index (`index.toml`)
+
+```toml
+format = 2
+
+[[packages]]
+id = "org.example.lib"
+version = "1.0.0"
+content_hash = "blake3:…"
+file = "packages/org.example.lib-1.0.0.lar"
+key_id = "ed25519:…"
+signature = "base64:…"
+dependencies = { "org.example.base" = "^1.0" }
+```
+
+Format **2** embeds each pin’s `[dependencies]` so resolve can search without downloading `.lar` files. Format **1** indexes remain readable; resolve falls back to inspecting the archive for those pins. `lar repo publish` / `index` always write format 2.
+
 ## Source config
 
 ```toml

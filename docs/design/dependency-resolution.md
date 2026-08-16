@@ -26,7 +26,8 @@ Today `lar resolve`:
   2. Select the **highest compatible** version
   3. If that exact pin exists in multiple sources, take it from the **highest-priority** source (earlier in `sources.toml`)
   4. Never merge package contents from different sources
-- Peeks candidate metadata without adding failed tries to the store; fetches only the winning set
+- Peeks candidate metadata from the package index (format 2+) without downloading archives; fetches only the winning set. Legacy format 1 indexes fall back to archive inspect.
+- On materialize, verifies archive `content_hash` and that manifest dependencies match the index metadata used during search
 - One version per id; when a later requirement conflicts with an earlier choice, the solver **backtracks** and tries older candidates
 - Hard conflicts remain when no single version satisfies all requirements; multi-candidate failures list each attempt
 - Verifies signatures/hashes and emits advisory warnings on materialize (refuses yanked on new fetch)

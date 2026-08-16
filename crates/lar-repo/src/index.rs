@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
@@ -7,7 +8,10 @@ use crate::trust::{key_id_from_public, sign_content_hash};
 use crate::Error;
 use crate::Result;
 
-pub const INDEX_FORMAT: u32 = 1;
+/// Current index format (includes per-pin dependency metadata for resolve).
+pub const INDEX_FORMAT: u32 = 2;
+/// Oldest index format still accepted when reading.
+pub const INDEX_FORMAT_MIN: u32 = 1;
 
 /// Published package index (`index.toml`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -32,13 +36,20 @@ pub struct IndexPackage {
     pub file: String,
     pub key_id: String,
     pub signature: String,
+    /// Declared `[dependencies]` from the package manifest.
+    ///
+    /// Present in format 2+ indexes so clients can resolve without downloading
+    /// `.lar` archives. Format 1 indexes omit this (defaults to empty); resolve
+    /// falls back to inspecting the archive for those pins.
+    #[serde(default)]
+    pub dependencies: BTreeMap<String, String>,
 }
 
 impl PackageIndex {
     pub fn validate(&self) -> Result<()> {
-        if self.format != INDEX_FORMAT {
+        if self.format < INDEX_FORMAT_MIN || self.format > INDEX_FORMAT {
             return Err(Error::InvalidIndex(format!(
-                "unsupported format {} (supported: {INDEX_FORMAT})",
+                "unsupported format {} (supported: {INDEX_FORMAT_MIN}..={INDEX_FORMAT})",
                 self.format
             )));
         }
@@ -69,6 +80,11 @@ impl PackageIndex {
         self.packages
             .iter()
             .find(|p| p.id == id && p.version == version)
+    }
+
+    /// True when dependency metadata in the index is authoritative for resolve.
+    pub fn has_resolve_metadata(&self) -> bool {
+        self.format >= 2
     }
 }
 
@@ -165,6 +181,7 @@ pub fn build_index(dir: &Path, secret_key: &str) -> Result<PackageIndex> {
                 file: rel,
                 key_id: key_id.clone(),
                 signature,
+                dependencies: archive.manifest.dependencies,
             });
         }
     }

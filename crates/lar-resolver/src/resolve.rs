@@ -245,41 +245,44 @@ impl<'a> ResolveCtx<'a> {
     /// Fetch winning packages into the store (failed search candidates were never added).
     fn materialize(&mut self) -> Result<()> {
         let mut warn_out = io::stderr();
-        let pins: Vec<(String, String, Option<String>)> = self
-            .packages
-            .values()
-            .map(|p| (p.id.clone(), p.version.clone(), p.content_hash.clone()))
-            .collect();
+        let pins: Vec<LockedPackage> = self.packages.values().cloned().collect();
 
-        for (id, version, expected_hash) in pins {
-            let Some(expected_hash) = expected_hash else {
+        for pin in pins {
+            let Some(expected_hash) = pin.content_hash.clone() else {
                 continue;
             };
-            let stored = if let Some(existing) = self.store.get(&id, &version)? {
+            let stored = if let Some(existing) = self.store.get(&pin.id, &pin.version)? {
                 lar_repo::emit_store_hit_warnings(
                     self.store,
-                    &id,
-                    &version,
+                    &pin.id,
+                    &pin.version,
                     Some(&existing.content_hash),
                     &mut warn_out,
                 )?;
                 existing
             } else {
-                lar_repo::fetch_into_store(self.store, &id, &version, &mut warn_out).map_err(
-                    |err| match err {
+                lar_repo::fetch_into_store(self.store, &pin.id, &pin.version, &mut warn_out)
+                    .map_err(|err| match err {
                         lar_repo::Error::PackageNotFound { id, version } => {
                             Error::Missing { id, version }
                         }
                         other => other.into(),
-                    },
-                )?
+                    })?
             };
             if stored.content_hash != expected_hash {
                 return Err(Error::HashMismatch {
-                    id,
-                    version,
+                    id: pin.id,
+                    version: pin.version,
                     locked: expected_hash,
                     store: stored.content_hash,
+                });
+            }
+            // Index metadata used during search must match the archive manifest.
+            let manifest = load_manifest(&stored.path.join("package.toml"))?;
+            if manifest.dependencies != pin.dependencies {
+                return Err(Error::DependencyMismatch {
+                    id: pin.id,
+                    version: pin.version,
                 });
             }
         }
