@@ -8,5 +8,6 @@ These documents describe shipped (or actively implemented) formats and subsystem
 | [sxs-store.md](sxs-store.md) | Local SxS store layout, add/list/remove |
 | [resolve-lockfile.md](resolve-lockfile.md) | `lar resolve` and `lar.lock` |
 | [runtime.md](runtime.md) | Runtime compose, list, inspect, gc, and `lar run` |
-| [install.md](install.md) | Install records via `lar-manager` (`lar install` / `list` / `uninstall`) |
+| [install.md](install.md) | Install records via `lar-manager` (`lar install` / `list` / `update` / `rollback` / `uninstall`) |
+| [desktop.md](desktop.md) | Freedesktop `.desktop` publish, PATH shims, and `lar launch` |
 | [repos.md](repos.md) | Package sources, signatures, advisories, `lar audit` |

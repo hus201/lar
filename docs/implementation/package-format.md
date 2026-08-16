@@ -10,7 +10,7 @@ A package is identified by reverse-DNS `id` and semver `version`. Capabilities c
 
 - `[dependencies]` — semver requirements (exact or ranges such as `^1.0`)
 - `[entry]` — one or more launchable binaries
-- `[desktop]` — desktop integration metadata (reserved for later use)
+- `[desktop]` — desktop integration metadata (`name`, `icon`, `categories`) used when publishing `.desktop` files
 - `files/` — immutable payload
 
 ## Staged directory layout
@@ -55,7 +55,9 @@ default = "bin/editor"
 binaries = ["bin/editor"]
 
 [desktop]
-# Optional fields reserved for desktop integration
+name = "Example Editor"
+icon = "share/icons/editor.png"
+categories = ["Utility", "TextEditor"]
 ```
 
 ### `[package]` fields
@@ -88,7 +90,15 @@ When `[entry]` is present, every listed path must exist under `files/` at valida
 
 ### `[desktop]` (optional)
 
-Reserved for later desktop integration. Unknown keys are rejected; fields may be empty in v1.
+Used when an installed package has `[entry]` and LAR publishes a `.desktop` file — [desktop.md](desktop.md).
+
+| Field | Notes |
+|-------|--------|
+| `name` | Menu display name; defaults to `package.name` |
+| `icon` | Path relative to `files/`; published as an absolute store path |
+| `categories` | Freedesktop category strings |
+
+Unknown keys are rejected.
 
 ### Top-level tables
 

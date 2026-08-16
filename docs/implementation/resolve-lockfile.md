@@ -65,7 +65,7 @@ lar --system resolve
 ```
 
 - Writes `lar.lock` beside the root manifest.
-- Uses the same prefix rules as the store (`--system`, `LAR_USER_PREFIX`, `LAR_SYSTEM_PREFIX`).
+- Uses the same prefix rules as the store (`--system`, `LAR_USER_PREFIX`). System mode is always `/var/lib/lar`.
 - Prints the root id/version, package count, and lockfile path.
 
 ## Verify against the store

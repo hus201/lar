@@ -19,7 +19,7 @@ Design docs describe *what* LAR is and *why*. Implementation details live under 
 | [packages.md](packages.md) | Package model, identity, manifest | Implemented |
 | [dependency-resolution.md](dependency-resolution.md) | Resolving dependencies | Partial |
 | [runtime.md](runtime.md) | Runtime composition, linking, launch | Implemented |
-| [desktop-and-services.md](desktop-and-services.md) | Desktop integration and services | Planned |
+| [desktop-and-services.md](desktop-and-services.md) | Desktop integration and services | Partial |
 | [platform.md](platform.md) | OS boundary, security, updates, rollback | Partial |
 | [future-extensions.md](future-extensions.md) | Possible future work | Planned |
 | [summary.md](summary.md) | Design summary | Design |

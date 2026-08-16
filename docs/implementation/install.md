@@ -1,6 +1,6 @@
 # LAR Install Records
 
-Implemented in the `lar-manager` crate. `lar install` records an application under the LAR prefix, resolves its exact dependency pins from the local store (fetching from package sources when needed), composes a runtime, and writes an install record. `lar update` / `lar rollback` manage a single previous generation. `lar uninstall` removes the record and its runtimes; store packages remain.
+Implemented in the `lar-manager` crate. `lar install` records an application under the LAR prefix, resolves its exact dependency pins from the local store (fetching from package sources when needed), composes a runtime, and writes an install record. Apps with `[entry]` also get a `.desktop` file — [desktop.md](desktop.md). `lar update` / `lar rollback` manage a single previous generation. `lar uninstall` removes the record, desktop files, and runtimes; store packages remain.
 
 ## Scope (v1)
 
@@ -55,7 +55,8 @@ The `[[packages]]` lists (active **and** previous) are install pin sets used as 
 4. Verify the lock is runtime-ready (root included with matching `content_hash`).
 5. Compose a runtime with the selected `--compose` mode.
 6. Write `install.toml` atomically under `installs/{id}/`.
-7. On replace (`--force` or update): stash the old active record as `previous.toml` and **keep** its runtime. If an older `previous.toml` already existed, drop that older runtime when it is unused by the new active/previous pair.
+7. Publish PATH shims and `.desktop` files when the root has `[entry]` — [desktop.md](desktop.md).
+8. On replace (`--force` or update): stash the old active record as `previous.toml` and **keep** its runtime. If an older `previous.toml` already existed, drop that older runtime when it is unused by the new active/previous pair.
 
 ### Update
 
@@ -73,9 +74,10 @@ The `[[packages]]` lists (active **and** previous) are install pin sets used as 
 ### Uninstall
 
 1. Load active (and previous if present).
-2. Remove both referenced runtimes when distinct.
-3. Remove `installs/{id}/`.
-4. Leave store packages in place.
+2. Remove published `.desktop` files and PATH shims.
+3. Remove both referenced runtimes when distinct.
+4. Remove `installs/{id}/`.
+5. Leave store packages in place.
 
 ## Store remove referrers
 
@@ -93,6 +95,7 @@ lar install org.example.app@0.1.0
 lar update org.example.app
 lar rollback org.example.app
 lar list
+lar launch org.example.app
 lar uninstall org.example.app
 ```
 
@@ -100,12 +103,15 @@ lar uninstall org.example.app
 - `update` prints `updated id old -> new (runtime …)` or `up to date id version`.
 - `rollback` prints `rolled back id version (runtime …)`.
 - `list` prints `id version compose runtime_id` (sorted by id).
+- `launch` runs the installed entry binary (exit code forwarded).
 - `uninstall` prints `uninstalled id version (runtime <runtime_id>)`.
+- Install/update/rollback may print `warning: PATH: … shadows LAR export …` on stderr when a host binary would win — [desktop.md](desktop.md).
 
 ## Related
 
 - SxS store: [sxs-store.md](sxs-store.md)
 - Resolve / lockfile: [resolve-lockfile.md](resolve-lockfile.md)
 - Runtime: [runtime.md](runtime.md)
+- Desktop: [desktop.md](desktop.md)
 - Repos: [repos.md](repos.md)
 - Design: [Platform](../design/platform.md), [Architecture](../design/architecture.md)

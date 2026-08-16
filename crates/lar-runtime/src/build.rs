@@ -158,46 +158,71 @@ pub fn run(
     args: &[String],
 ) -> Result<ExitStatus> {
     let built = build(lock_path, store, compose)?;
+    run_runtime_entry(
+        store,
+        &built.path,
+        &built.meta.root.id,
+        &built.meta.root.version,
+        None,
+        args,
+    )
+}
+
+/// Execute the entry binary of a composed runtime for the given root package.
+///
+/// When `binary` is `None`, uses the entry default (or sole) binary.
+pub fn run_runtime_entry(
+    store: &Store,
+    runtime_path: &Path,
+    root_id: &str,
+    root_version: &str,
+    binary: Option<&str>,
+    args: &[String],
+) -> Result<ExitStatus> {
     let root = store
-        .get(&built.meta.root.id, &built.meta.root.version)?
+        .get(root_id, root_version)?
         .ok_or_else(|| lar_store::Error::NotFound {
-            id: built.meta.root.id.clone(),
-            version: built.meta.root.version.clone(),
+            id: root_id.to_string(),
+            version: root_version.to_string(),
         })?;
     let manifest = load_manifest(&root.path.join("package.toml"))?;
     let entry = manifest.entry.as_ref().ok_or_else(|| Error::NoEntry {
-        id: built.meta.root.id.clone(),
-        version: built.meta.root.version.clone(),
+        id: root_id.to_string(),
+        version: root_version.to_string(),
     })?;
-    let binary = entry
-        .default
-        .as_ref()
-        .or_else(|| entry.binaries.first())
-        .ok_or_else(|| Error::NoEntry {
-            id: built.meta.root.id.clone(),
-            version: built.meta.root.version.clone(),
-        })?;
+    let binary = if let Some(rel) = binary {
+        if !entry.binaries.iter().any(|b| b == rel) {
+            return Err(Error::EntryMissing(rel.to_string()));
+        }
+        rel
+    } else {
+        entry
+            .default
+            .as_deref()
+            .or_else(|| entry.binaries.first().map(String::as_str))
+            .ok_or_else(|| Error::NoEntry {
+                id: root_id.to_string(),
+                version: root_version.to_string(),
+            })?
+    };
 
-    let exe = built.path.join("files").join(binary);
+    let exe = runtime_path.join("files").join(binary);
     if !exe.exists() {
-        return Err(Error::EntryMissing(binary.clone()));
+        return Err(Error::EntryMissing(binary.to_string()));
     }
 
     let mut cmd = Command::new(&exe);
     cmd.args(args);
-    apply_runtime_env(&mut cmd, &built.path);
+    apply_runtime_env(&mut cmd, runtime_path);
     cmd.status()
         .map_err(|source| Error::Io { path: exe, source })
 }
 
 fn apply_runtime_env(cmd: &mut Command, runtime_path: &Path) {
-    let files = runtime_path.join("files");
-
-    let path_dirs = bin_search_paths(&files);
-    if !path_dirs.is_empty() {
-        let prepend = join_paths(&path_dirs);
+    let env = runtime_launch_env(runtime_path);
+    if !env.path_prepend.is_empty() {
         let current = std::env::var_os("PATH").unwrap_or_default();
-        let mut new_path = prepend;
+        let mut new_path = env.path_prepend.clone();
         if !current.is_empty() {
             new_path.push(":");
             new_path.push(current);
@@ -205,11 +230,9 @@ fn apply_runtime_env(cmd: &mut Command, runtime_path: &Path) {
         cmd.env("PATH", new_path);
     }
 
-    let lib_dirs = library_search_paths(&files);
-    if !lib_dirs.is_empty() {
-        let prepend = join_paths(&lib_dirs);
+    if !env.ld_library_path_prepend.is_empty() {
         let current = std::env::var_os("LD_LIBRARY_PATH").unwrap_or_default();
-        let mut new_path = prepend;
+        let mut new_path = env.ld_library_path_prepend.clone();
         if !current.is_empty() {
             new_path.push(":");
             new_path.push(current);
@@ -217,7 +240,28 @@ fn apply_runtime_env(cmd: &mut Command, runtime_path: &Path) {
         cmd.env("LD_LIBRARY_PATH", new_path);
     }
 
-    cmd.env("LAR_RUNTIME", runtime_path);
+    cmd.env("LAR_RUNTIME", &env.lar_runtime);
+}
+
+/// Environment directories prepended when launching from a composed runtime.
+#[derive(Debug, Clone)]
+pub struct RuntimeLaunchEnv {
+    /// Colon-joined bin dirs to prepend to `PATH` (may be empty).
+    pub path_prepend: std::ffi::OsString,
+    /// Colon-joined lib dirs to prepend to `LD_LIBRARY_PATH` (may be empty).
+    pub ld_library_path_prepend: std::ffi::OsString,
+    /// Absolute runtime directory (`LAR_RUNTIME`).
+    pub lar_runtime: PathBuf,
+}
+
+/// Compute the same env preambles used by [`run_runtime_entry`] / `lar run`.
+pub fn runtime_launch_env(runtime_path: &Path) -> RuntimeLaunchEnv {
+    let files = runtime_path.join("files");
+    RuntimeLaunchEnv {
+        path_prepend: join_paths(&bin_search_paths(&files)),
+        ld_library_path_prepend: join_paths(&library_search_paths(&files)),
+        lar_runtime: runtime_path.to_path_buf(),
+    }
 }
 
 /// Directories prepended to `PATH` when launching.

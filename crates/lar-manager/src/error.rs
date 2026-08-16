@@ -14,6 +14,18 @@ pub enum Error {
     #[error("no previous install to roll back for {0}")]
     NoPrevious(String),
 
+    #[error("runtime missing for {id} (runtime_id {runtime_id}); reinstall the application")]
+    RuntimeMissing { id: String, runtime_id: String },
+
+    #[error("application {0} has no [entry] binaries to launch")]
+    NoEntry(String),
+
+    #[error("refusing to overwrite non-LAR file at {path}")]
+    ExportCollision { path: String },
+
+    #[error("entry binary `{binary}` is not listed in [entry] for {id}")]
+    UnknownBinary { id: String, binary: String },
+
     #[error("package not found in store: {id} {version}")]
     NotInStore { id: String, version: String },
 

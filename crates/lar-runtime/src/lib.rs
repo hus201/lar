@@ -6,7 +6,10 @@ mod compose;
 mod error;
 mod meta;
 
-pub use build::{build, resolve_lockfile_path, run, runtime_id, BuiltRuntime};
+pub use build::{
+    build, resolve_lockfile_path, run, run_runtime_entry, runtime_id, runtime_launch_env,
+    BuiltRuntime, RuntimeLaunchEnv,
+};
 pub use catalog::{gc, inspect, list, GcReport, ListedRuntime};
 pub use compose::ComposeMode;
 pub use error::Error;

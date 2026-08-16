@@ -7,12 +7,23 @@ fn lar() -> Command {
     Command::new(env!("CARGO_BIN_EXE_lar"))
 }
 
+/// `lar` with a user prefix and isolated session dirs under the temp root.
+fn lar_user(prefix: &std::path::Path) -> Command {
+    let root = prefix.parent().unwrap_or(prefix);
+    let xdg = prefix.with_file_name("xdg-data");
+    let mut cmd = lar();
+    cmd.env("LAR_USER_PREFIX", prefix);
+    cmd.env("XDG_DATA_HOME", xdg);
+    // Session PATH exports resolve to `$HOME/.local/bin`.
+    cmd.env("HOME", root);
+    cmd
+}
+
 #[test]
 fn update_requires_installed_app() {
     let dir = tempdir().unwrap();
     let prefix = dir.path().join("prefix");
-    let output = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let output = lar_user(&prefix)
         .args(["update", "org.example.app"])
         .output()
         .expect("failed to run lar");
@@ -66,8 +77,7 @@ binaries = ["bin/app"]
         .unwrap()
         .status
         .success());
-    assert!(lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    assert!(lar_user(&prefix)
         .args(["install"])
         .arg(app.join("org.example.app-0.1.0.lar"))
         .output()
@@ -75,8 +85,7 @@ binaries = ["bin/app"]
         .status
         .success());
 
-    let output = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let output = lar_user(&prefix)
         .args(["rollback", "org.example.app"])
         .output()
         .unwrap();
@@ -96,6 +105,7 @@ fn help_lists_core_commands() {
         "resolve",
         "runtime",
         "run",
+        "launch",
         "install",
         "list",
         "update",
@@ -138,8 +148,7 @@ fn store_add_and_list() {
     );
     let lar_path = pkg.join("org.example.editor-0.1.0.lar");
 
-    let add = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let add = lar_user(&prefix)
         .args(["store", "add"])
         .arg(&lar_path)
         .output()
@@ -150,8 +159,7 @@ fn store_add_and_list() {
         String::from_utf8_lossy(&add.stderr)
     );
 
-    let list = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let list = lar_user(&prefix)
         .args(["store", "list"])
         .output()
         .unwrap();
@@ -161,8 +169,7 @@ fn store_add_and_list() {
     assert!(stdout.contains("0.1.0"), "{stdout}");
     assert!(stdout.contains("blake3:"), "{stdout}");
 
-    let remove = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let remove = lar_user(&prefix)
         .args(["store", "remove", "org.example.editor", "0.1.0"])
         .output()
         .unwrap();
@@ -172,8 +179,7 @@ fn store_add_and_list() {
         String::from_utf8_lossy(&remove.stderr)
     );
 
-    let list_after = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let list_after = lar_user(&prefix)
         .args(["store", "list"])
         .output()
         .unwrap();
@@ -182,8 +188,7 @@ fn store_add_and_list() {
         .trim()
         .is_empty());
 
-    let config = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let config = lar_user(&prefix)
         .args(["config", "--json"])
         .output()
         .unwrap();
@@ -219,8 +224,7 @@ fn resolve_writes_lockfile() {
     fs::write(lib.join("files/lib.txt"), b"lib").unwrap();
     let pack_lib = lar().args(["package", "pack"]).arg(&lib).output().unwrap();
     assert!(pack_lib.status.success());
-    let add_lib = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let add_lib = lar_user(&prefix)
         .args(["store", "add"])
         .arg(lib.join("org.example.lib-1.0.0.lar"))
         .output()
@@ -249,8 +253,7 @@ fn resolve_writes_lockfile() {
     manifest.push_str("\n[dependencies]\n\"org.example.lib\" = \"1.0.0\"\n");
     fs::write(app.join("package.toml"), manifest).unwrap();
 
-    let resolve = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let resolve = lar_user(&prefix)
         .args(["resolve"])
         .arg(&app)
         .output()
@@ -302,8 +305,7 @@ fn runtime_build_and_run() {
         .unwrap()
         .status
         .success());
-    assert!(lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    assert!(lar_user(&prefix)
         .args(["store", "add"])
         .arg(lib.join("org.example.lib-1.0.0.lar"))
         .output()
@@ -352,8 +354,7 @@ binaries = ["bin/app"]
         .unwrap()
         .status
         .success());
-    assert!(lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    assert!(lar_user(&prefix)
         .args(["store", "add"])
         .arg(app.join("org.example.app-0.1.0.lar"))
         .output()
@@ -362,8 +363,7 @@ binaries = ["bin/app"]
         .success());
 
     // Refresh local package.toml from pack (content_hash) and resolve.
-    assert!(lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    assert!(lar_user(&prefix)
         .args(["resolve"])
         .arg(&app)
         .output()
@@ -371,8 +371,7 @@ binaries = ["bin/app"]
         .status
         .success());
 
-    let build = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let build = lar_user(&prefix)
         .args(["runtime", "build"])
         .arg(&app)
         .output()
@@ -389,8 +388,7 @@ binaries = ["bin/app"]
     );
     assert!(stdout.contains("runtimes"), "{stdout}");
 
-    let run = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let run = lar_user(&prefix)
         .args(["run"])
         .arg(&app)
         .output()
@@ -403,8 +401,7 @@ binaries = ["bin/app"]
     let run_out = String::from_utf8_lossy(&run.stdout);
     assert!(run_out.contains("hello-from-runtime"), "{run_out}");
 
-    let list = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let list = lar_user(&prefix)
         .args(["runtime", "list"])
         .output()
         .unwrap();
@@ -413,8 +410,7 @@ binaries = ["bin/app"]
     assert!(list_out.contains("org.example.app"), "{list_out}");
 
     let runtime_id = list_out.split_whitespace().next().unwrap();
-    let inspected = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let inspected = lar_user(&prefix)
         .args(["runtime", "inspect", "--json", runtime_id])
         .output()
         .unwrap();
@@ -428,8 +424,7 @@ binaries = ["bin/app"]
     assert!(inspected_out.contains("org.example.app"), "{inspected_out}");
 
     // Default gc keeps healthy runtimes.
-    let gc_keep = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let gc_keep = lar_user(&prefix)
         .args(["runtime", "gc"])
         .output()
         .unwrap();
@@ -443,22 +438,19 @@ binaries = ["bin/app"]
     assert!(gc_keep_out.contains("0 orphan(s)"), "{gc_keep_out}");
 
     // Force-remove store packages, then default gc removes the broken runtime.
-    assert!(lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    assert!(lar_user(&prefix)
         .args(["store", "remove", "--force", "org.example.app", "0.1.0"])
         .output()
         .unwrap()
         .status
         .success());
-    assert!(lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    assert!(lar_user(&prefix)
         .args(["store", "remove", "--force", "org.example.lib", "1.0.0"])
         .output()
         .unwrap()
         .status
         .success());
-    let gc_broken = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let gc_broken = lar_user(&prefix)
         .args(["runtime", "gc"])
         .output()
         .unwrap();
@@ -475,8 +467,7 @@ binaries = ["bin/app"]
         "{gc_broken_out}"
     );
 
-    let list_after = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let list_after = lar_user(&prefix)
         .args(["runtime", "list"])
         .output()
         .unwrap();
@@ -531,24 +522,21 @@ binaries = ["bin/app"]
         .unwrap()
         .status
         .success());
-    assert!(lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    assert!(lar_user(&prefix)
         .args(["store", "add"])
         .arg(app.join("org.example.app-0.1.0.lar"))
         .output()
         .unwrap()
         .status
         .success());
-    assert!(lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    assert!(lar_user(&prefix)
         .args(["resolve"])
         .arg(&app)
         .output()
         .unwrap()
         .status
         .success());
-    assert!(lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    assert!(lar_user(&prefix)
         .args(["runtime", "build"])
         .arg(&app)
         .output()
@@ -556,8 +544,7 @@ binaries = ["bin/app"]
         .status
         .success());
 
-    let gc = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let gc = lar_user(&prefix)
         .args(["runtime", "gc", "--all"])
         .output()
         .unwrap();
@@ -572,8 +559,7 @@ binaries = ["bin/app"]
         "{gc_out}"
     );
 
-    let list = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let list = lar_user(&prefix)
         .args(["runtime", "list"])
         .output()
         .unwrap();
@@ -613,8 +599,7 @@ fn install_list_uninstall() {
         .unwrap()
         .status
         .success());
-    assert!(lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    assert!(lar_user(&prefix)
         .args(["store", "add"])
         .arg(lib.join("org.example.lib-1.0.0.lar"))
         .output()
@@ -665,8 +650,7 @@ binaries = ["bin/app"]
         .success());
     let lar_path = app.join("org.example.app-0.1.0.lar");
 
-    let install = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let install = lar_user(&prefix)
         .args(["install"])
         .arg(&lar_path)
         .output()
@@ -682,8 +666,7 @@ binaries = ["bin/app"]
         "{install_out}"
     );
 
-    let list = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let list = lar_user(&prefix)
         .args(["list"])
         .output()
         .unwrap();
@@ -692,8 +675,7 @@ binaries = ["bin/app"]
     assert!(list_out.contains("org.example.app"), "{list_out}");
     assert!(list_out.contains("0.1.0"), "{list_out}");
 
-    let blocked = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let blocked = lar_user(&prefix)
         .args(["store", "remove", "--force", "org.example.lib", "1.0.0"])
         .output()
         .unwrap();
@@ -704,8 +686,7 @@ binaries = ["bin/app"]
         "{blocked_err}"
     );
 
-    let uninstall = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let uninstall = lar_user(&prefix)
         .args(["uninstall", "org.example.app"])
         .output()
         .unwrap();
@@ -715,8 +696,7 @@ binaries = ["bin/app"]
         String::from_utf8_lossy(&uninstall.stderr)
     );
 
-    let list_after = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let list_after = lar_user(&prefix)
         .args(["list"])
         .output()
         .unwrap();
@@ -725,8 +705,7 @@ binaries = ["bin/app"]
         .trim()
         .is_empty());
 
-    let remove_lib = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let remove_lib = lar_user(&prefix)
         .args(["store", "remove", "--force", "org.example.lib", "1.0.0"])
         .output()
         .unwrap();
@@ -735,6 +714,144 @@ binaries = ["bin/app"]
         "stderr={}",
         String::from_utf8_lossy(&remove_lib.stderr)
     );
+}
+
+#[test]
+fn install_publishes_desktop_and_launch() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempdir().unwrap();
+    let prefix = dir.path().join("prefix");
+    let xdg = dir.path().join("xdg-data");
+
+    let app = dir.path().join("app");
+    assert!(lar()
+        .args([
+            "package",
+            "init",
+            "--id",
+            "org.example.desk",
+            "--name",
+            "Desk",
+        ])
+        .arg(&app)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    let bin = app.join("files/bin");
+    fs::create_dir_all(&bin).unwrap();
+    let script = bin.join("app");
+    fs::write(&script, "#!/bin/sh\necho desk-launch\n").unwrap();
+    let mut perms = fs::metadata(&script).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&script, perms).unwrap();
+    fs::write(app.join("files/app.png"), b"png").unwrap();
+    let mut manifest = fs::read_to_string(app.join("package.toml")).unwrap();
+    manifest.push_str(
+        r#"
+[entry]
+default = "bin/app"
+binaries = ["bin/app"]
+
+[desktop]
+name = "Desk App"
+icon = "app.png"
+categories = ["Utility"]
+"#,
+    );
+    fs::write(app.join("package.toml"), manifest).unwrap();
+    assert!(lar()
+        .args(["package", "pack"])
+        .arg(&app)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    let lar_path = app.join("org.example.desk-0.1.0.lar");
+
+    let install = lar_user(&prefix)
+        .args(["install"])
+        .arg(&lar_path)
+        .output()
+        .unwrap();
+    assert!(
+        install.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&install.stderr)
+    );
+
+    let prefix_desktop = prefix
+        .join("share/applications/org.example.desk.desktop");
+    let xdg_desktop = xdg.join("applications/lar-org.example.desk.desktop");
+    assert!(prefix_desktop.is_file(), "{}", prefix_desktop.display());
+    assert!(xdg_desktop.is_file(), "{}", xdg_desktop.display());
+    let body = fs::read_to_string(&prefix_desktop).unwrap();
+    assert!(body.contains("Name=Desk App"), "{body}");
+    assert!(body.contains("Categories=Utility;"), "{body}");
+    assert!(body.contains("/bin/app"), "{body}");
+    let libexec = prefix.join("libexec/lar");
+    assert!(libexec.exists(), "{}", libexec.display());
+
+    let prefix_shim = prefix.join("bin/app");
+    let session_shim = dir.path().join(".local/bin/app");
+    assert!(
+        prefix_shim
+            .symlink_metadata()
+            .map(|m| m.file_type().is_symlink())
+            .unwrap_or(false),
+        "{}",
+        prefix_shim.display()
+    );
+    assert!(
+        session_shim
+            .symlink_metadata()
+            .map(|m| m.file_type().is_symlink())
+            .unwrap_or(false),
+        "{}",
+        session_shim.display()
+    );
+    let meta = fs::read_to_string(prefix.join("share/lar/exports/app.toml")).unwrap();
+    assert!(meta.contains("org.example.desk"), "{meta}");
+    assert!(meta.contains("/files/bin/app"), "{meta}");
+
+    let launch = lar_user(&prefix)
+        .args(["launch", "org.example.desk"])
+        .output()
+        .unwrap();
+    assert!(
+        launch.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&launch.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&launch.stdout).contains("desk-launch"),
+        "stdout={}",
+        String::from_utf8_lossy(&launch.stdout)
+    );
+
+    let via_shim = Command::new(&session_shim).output().unwrap();
+    assert!(
+        via_shim.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&via_shim.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&via_shim.stdout).contains("desk-launch"),
+        "stdout={}",
+        String::from_utf8_lossy(&via_shim.stdout)
+    );
+
+    let uninstall = lar_user(&prefix)
+        .args(["uninstall", "org.example.desk"])
+        .output()
+        .unwrap();
+    assert!(uninstall.status.success());
+    assert!(!prefix_desktop.exists());
+    assert!(!xdg_desktop.exists());
+    assert!(!prefix_shim.exists());
+    assert!(!session_shim.exists());
+    assert!(!prefix.join("share/lar/exports/app.toml").exists());
 }
 
 #[test]
@@ -760,8 +877,7 @@ fn resolve_fails_when_dependency_missing() {
     manifest.push_str("\n[dependencies]\n\"org.example.lib\" = \"1.0.0\"\n");
     fs::write(app.join("package.toml"), manifest).unwrap();
 
-    let resolve = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let resolve = lar_user(&prefix)
         .args(["resolve"])
         .arg(&app)
         .output()
@@ -808,8 +924,7 @@ fn resolve_version_range_picks_highest() {
             .unwrap()
             .status
             .success());
-        assert!(lar()
-            .env("LAR_USER_PREFIX", &prefix)
+        assert!(lar_user(&prefix)
             .args(["store", "add"])
             .arg(lib.join(format!("org.example.lib-{version}.lar")))
             .output()
@@ -837,8 +952,7 @@ fn resolve_version_range_picks_highest() {
     manifest.push_str("\n[dependencies]\n\"org.example.lib\" = \"^1.0\"\n");
     fs::write(app.join("package.toml"), manifest).unwrap();
 
-    let resolve = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let resolve = lar_user(&prefix)
         .args(["resolve"])
         .arg(&app)
         .output()
@@ -899,8 +1013,7 @@ fn resolve_fails_on_version_conflict() {
             "stderr={}",
             String::from_utf8_lossy(&pack.stderr)
         );
-        let add = lar()
-            .env("LAR_USER_PREFIX", &prefix)
+        let add = lar_user(&prefix)
             .args(["store", "add"])
             .arg(pkg.join(format!("{id}-{version}.lar")))
             .output()
@@ -936,8 +1049,7 @@ fn resolve_fails_on_version_conflict() {
     );
     fs::write(app.join("package.toml"), manifest).unwrap();
 
-    let resolve = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let resolve = lar_user(&prefix)
         .args(["resolve"])
         .arg(&app)
         .output()
@@ -1123,8 +1235,7 @@ fn repo_fetch_resolve_advisory_and_audit() {
         String::from_utf8_lossy(&keygen.stderr)
     );
 
-    let trust = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let trust = lar_user(&prefix)
         .args(["repo", "trust", "add"])
         .arg(keys.join("ed25519.pub"))
         .args(["--comment", "test"])
@@ -1197,8 +1308,7 @@ url = "https://example.test/LAR-2026-0099"
     )
     .unwrap();
 
-    let add = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let add = lar_user(&prefix)
         .args(["repo", "add", "--main"])
         .arg(&repo)
         .output()
@@ -1233,8 +1343,7 @@ url = "https://example.test/LAR-2026-0099"
     manifest.push_str("\n[dependencies]\n\"org.example.lib\" = \"1.0.0\"\n");
     fs::write(app.join("package.toml"), manifest).unwrap();
 
-    let resolve = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let resolve = lar_user(&prefix)
         .args(["resolve"])
         .arg(&app)
         .output()
@@ -1250,8 +1359,7 @@ url = "https://example.test/LAR-2026-0099"
         "expected advisory warning, stderr={stderr}"
     );
 
-    let list = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let list = lar_user(&prefix)
         .args(["store", "list"])
         .output()
         .unwrap();
@@ -1279,8 +1387,7 @@ summary = "Yanked after ship"
     )
     .unwrap();
 
-    let audit = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let audit = lar_user(&prefix)
         .args(["audit", "--store"])
         .output()
         .unwrap();
@@ -1294,16 +1401,14 @@ summary = "Yanked after ship"
 
     // New fetch of yanked pin must refuse
     let prefix2 = dir.path().join("prefix2");
-    assert!(lar()
-        .env("LAR_USER_PREFIX", &prefix2)
+    assert!(lar_user(&prefix2)
         .args(["repo", "trust", "add"])
         .arg(keys.join("ed25519.pub"))
         .output()
         .unwrap()
         .status
         .success());
-    assert!(lar()
-        .env("LAR_USER_PREFIX", &prefix2)
+    assert!(lar_user(&prefix2)
         .args(["repo", "add", "--main"])
         .arg(&repo)
         .output()
@@ -1328,8 +1433,7 @@ summary = "Yanked after ship"
     let mut m2 = fs::read_to_string(app2.join("package.toml")).unwrap();
     m2.push_str("\n[dependencies]\n\"org.example.lib\" = \"1.0.0\"\n");
     fs::write(app2.join("package.toml"), m2).unwrap();
-    let resolve_yanked = lar()
-        .env("LAR_USER_PREFIX", &prefix2)
+    let resolve_yanked = lar_user(&prefix2)
         .args(["resolve"])
         .arg(&app2)
         .output()
@@ -1359,8 +1463,7 @@ fn install_from_apps_source() {
         .unwrap()
         .status
         .success());
-    assert!(lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    assert!(lar_user(&prefix)
         .args(["repo", "trust", "add"])
         .arg(keys.join("ed25519.pub"))
         .output()
@@ -1440,8 +1543,7 @@ binaries = ["bin/app"]
         .unwrap()
         .status
         .success());
-    assert!(lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    assert!(lar_user(&prefix)
         .args(["repo", "add", "--main"])
         .arg(&deps_only)
         .output()
@@ -1449,8 +1551,7 @@ binaries = ["bin/app"]
         .status
         .success());
 
-    let miss = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let miss = lar_user(&prefix)
         .args(["install", "org.example.vendorapp"])
         .output()
         .unwrap();
@@ -1459,8 +1560,7 @@ binaries = ["bin/app"]
         "deps-only main should not install apps"
     );
 
-    let add_apps = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let add_apps = lar_user(&prefix)
         .args(["repo", "add", "--policy", "apps", "--name", "vendor"])
         .arg(&repo)
         .output()
@@ -1471,8 +1571,7 @@ binaries = ["bin/app"]
         String::from_utf8_lossy(&add_apps.stderr)
     );
 
-    let install = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let install = lar_user(&prefix)
         .args(["install", "org.example.vendorapp"])
         .output()
         .unwrap();
@@ -1487,8 +1586,7 @@ binaries = ["bin/app"]
         "{stdout}"
     );
 
-    let list = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let list = lar_user(&prefix)
         .args(["list"])
         .output()
         .unwrap();
@@ -1499,8 +1597,7 @@ binaries = ["bin/app"]
         String::from_utf8_lossy(&list.stdout)
     );
 
-    let store_list = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let store_list = lar_user(&prefix)
         .args(["store", "list"])
         .output()
         .unwrap();
@@ -1527,8 +1624,7 @@ fn update_and_rollback_from_apps_source() {
         .unwrap()
         .status
         .success());
-    assert!(lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    assert!(lar_user(&prefix)
         .args(["repo", "trust", "add"])
         .arg(keys.join("ed25519.pub"))
         .output()
@@ -1594,8 +1690,7 @@ binaries = ["bin/app"]
         .unwrap()
         .status
         .success());
-    assert!(lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    assert!(lar_user(&prefix)
         .args(["repo", "add", "--policy", "apps", "--name", "vendor"])
         .arg(&repo)
         .output()
@@ -1603,8 +1698,7 @@ binaries = ["bin/app"]
         .status
         .success());
 
-    let install = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let install = lar_user(&prefix)
         .args(["install", "org.example.upapp@0.1.0"])
         .output()
         .unwrap();
@@ -1614,8 +1708,7 @@ binaries = ["bin/app"]
         String::from_utf8_lossy(&install.stderr)
     );
 
-    let update = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let update = lar_user(&prefix)
         .args(["update", "org.example.upapp"])
         .output()
         .unwrap();
@@ -1630,8 +1723,7 @@ binaries = ["bin/app"]
         "{out}"
     );
 
-    let up_to_date = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let up_to_date = lar_user(&prefix)
         .args(["update", "org.example.upapp"])
         .output()
         .unwrap();
@@ -1642,16 +1734,14 @@ binaries = ["bin/app"]
         String::from_utf8_lossy(&up_to_date.stdout)
     );
 
-    let list = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let list = lar_user(&prefix)
         .args(["list"])
         .output()
         .unwrap();
     assert!(String::from_utf8_lossy(&list.stdout).contains("0.2.0"));
 
     // previous.toml pins still block store remove
-    let remove_old = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let remove_old = lar_user(&prefix)
         .args(["store", "remove", "org.example.upapp", "0.1.0"])
         .output()
         .unwrap();
@@ -1662,8 +1752,7 @@ binaries = ["bin/app"]
         String::from_utf8_lossy(&remove_old.stderr)
     );
 
-    let rollback = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let rollback = lar_user(&prefix)
         .args(["rollback", "org.example.upapp"])
         .output()
         .unwrap();
@@ -1675,8 +1764,7 @@ binaries = ["bin/app"]
     let rb = String::from_utf8_lossy(&rollback.stdout);
     assert!(rb.contains("rolled back") && rb.contains("0.1.0"), "{rb}");
 
-    let list2 = lar()
-        .env("LAR_USER_PREFIX", &prefix)
+    let list2 = lar_user(&prefix)
         .args(["list"])
         .output()
         .unwrap();

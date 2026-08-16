@@ -54,6 +54,17 @@ pub enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// Launch an installed application by id
+    Launch {
+        /// Application package id
+        app: String,
+        /// Entry binary path relative to `files/` (must be listed in `[entry].binaries`)
+        #[arg(long)]
+        binary: Option<String>,
+        /// Arguments forwarded to the application entry binary
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// Install an application from a local .lar, the store, or an apps source
     Install {
         /// Path to a `.lar`, or a package `id` / `id@version`

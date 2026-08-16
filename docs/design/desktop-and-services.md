@@ -1,6 +1,6 @@
 # Desktop and Services
 
-**Status:** Planned
+**Status:** Partial — Desktop Entry publish and `lar launch` are implemented; MIME, portals, D-Bus activation, and service metadata remain planned — [desktop.md](../implementation/desktop.md)
 
 ## Desktop Integration
 
@@ -10,7 +10,7 @@ LAR applications integrate through standard Linux interfaces:
 
 - Wayland.
 - D-Bus.
-- Desktop Entry specification.
+- Desktop Entry specification (v1: `.desktop` publish + `lar launch`).
 - MIME handling.
 - Notifications.
 - Portals.

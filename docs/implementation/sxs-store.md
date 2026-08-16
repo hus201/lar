@@ -12,7 +12,8 @@ The Side-by-Side (SxS) store is LAR’s local immutable package storage. Verifie
 **Overrides (tests / advanced layouts):**
 
 - `LAR_USER_PREFIX` — replaces `~/.local/share/lar` in user mode
-- `LAR_SYSTEM_PREFIX` — replaces `/var/lib/lar` in system mode (`--system`)
+
+System mode (`--system`) always uses `/var/lib/lar` (no override).
 
 Store root: `{prefix}/store`
 

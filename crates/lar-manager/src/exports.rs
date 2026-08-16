@@ -1,0 +1,482 @@
+//! PATH command exports: symlinks to `libexec/lar` + metadata for the trampoline.
+
+use std::env;
+use std::fmt;
+use std::fs;
+use std::os::unix::fs::{symlink, PermissionsExt};
+use std::path::{Path, PathBuf};
+
+use lar_package::load_manifest;
+use lar_store::Store;
+use serde::{Deserialize, Serialize};
+
+use crate::launch_cmd::ensure_libexec_lar;
+use crate::record::InstallRecord;
+use crate::Error;
+use crate::Result;
+
+/// On-disk metadata for a PATH export (`share/lar/exports/{cmd}.toml`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExportMeta {
+    pub format: u32,
+    pub app_id: String,
+    pub runtime: PathBuf,
+    pub binary: PathBuf,
+}
+
+/// Current export metadata format.
+pub const EXPORT_FORMAT: u32 = 1;
+
+/// Result of publishing PATH exports.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ExportPublish {
+    /// True when `[entry]` exports were written.
+    pub published: bool,
+    /// Non-LAR commands earlier on `PATH` that shadow LAR exports.
+    pub shadows: Vec<PathShadow>,
+}
+
+/// A host/`PATH` binary that would be chosen instead of a LAR export.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PathShadow {
+    pub command: String,
+    /// LAR export path that should win (usually the session bin link).
+    pub export: PathBuf,
+    /// Earlier runnable path found on `PATH`.
+    pub shadowed_by: PathBuf,
+}
+
+impl fmt::Display for PathShadow {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let export_dir = self
+            .export
+            .parent()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| self.export.display().to_string());
+        write!(
+            f,
+            "PATH: `{}` shadows LAR export `{}` at `{}` (put `{export_dir}` earlier on PATH)",
+            self.shadowed_by.display(),
+            self.command,
+            self.export.display()
+        )
+    }
+}
+
+/// Publish (or refresh) PATH exports for an installed app with `[entry]`.
+///
+/// Writes export metadata and symlinks `{prefix}/bin/{cmd}` → `libexec/lar`
+/// (session bin links to the prefix bin entry). The `lar` binary trampolines
+/// when invoked under that name and `exec`s the entry ELF.
+pub fn publish(store: &Store, record: &InstallRecord) -> Result<ExportPublish> {
+    let stored = store
+        .get(&record.id, &record.version)?
+        .ok_or_else(|| Error::NotInStore {
+            id: record.id.clone(),
+            version: record.version.clone(),
+        })?;
+    let manifest = load_manifest(&stored.path.join("package.toml"))?;
+    let Some(entry) = &manifest.entry else {
+        remove(store, &record.id)?;
+        return Ok(ExportPublish::default());
+    };
+
+    let runtime_path = store.paths().runtimes.join(&record.runtime_id);
+    if !runtime_path.is_dir() {
+        return Err(Error::RuntimeMissing {
+            id: record.id.clone(),
+            runtime_id: record.runtime_id.clone(),
+        });
+    }
+
+    let mut names: Vec<(String, String)> = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    for rel in &entry.binaries {
+        let cmd = command_name(rel)?;
+        if !seen.insert(cmd.clone()) {
+            return Err(Error::Other(format!(
+                "duplicate entry basename `{cmd}` in package {}",
+                record.id
+            )));
+        }
+        names.push((cmd, rel.clone()));
+    }
+
+    remove(store, &record.id)?;
+    let lar_link = ensure_libexec_lar(store)?;
+
+    let prefix_bin = store.paths().share_bin();
+    let session_bin = store.paths().bin.clone();
+    let exports_dir = store.paths().share_exports();
+    fs::create_dir_all(&exports_dir).map_err(|source| Error::Io {
+        path: exports_dir.clone(),
+        source,
+    })?;
+    fs::create_dir_all(&prefix_bin).map_err(|source| Error::Io {
+        path: prefix_bin.clone(),
+        source,
+    })?;
+    fs::create_dir_all(&session_bin).map_err(|source| Error::Io {
+        path: session_bin.clone(),
+        source,
+    })?;
+
+    for (cmd, _) in &names {
+        for path in [prefix_bin.join(cmd), session_bin.join(cmd)] {
+            if path_exists(&path) && !is_lar_export(store, &path)? {
+                return Err(Error::ExportCollision {
+                    path: path.display().to_string(),
+                });
+            }
+        }
+    }
+
+    for (cmd, binary_rel) in &names {
+        let exe = runtime_path.join("files").join(binary_rel);
+        if !exe.is_file() {
+            return Err(Error::Other(format!(
+                "runtime entry `{binary_rel}` missing at {}",
+                exe.display()
+            )));
+        }
+
+        let meta = ExportMeta {
+            format: EXPORT_FORMAT,
+            app_id: record.id.clone(),
+            runtime: runtime_path.clone(),
+            binary: exe,
+        };
+        write_meta(&exports_dir.join(format!("{cmd}.toml")), &meta)?;
+
+        let prefix_link = prefix_bin.join(cmd);
+        replace_symlink(&prefix_link, &lar_link)?;
+        replace_symlink(&session_bin.join(cmd), &prefix_link)?;
+    }
+
+    let mut shadows = Vec::new();
+    for (cmd, _) in &names {
+        if let Some(shadow) = detect_path_shadow(store, cmd)? {
+            shadows.push(shadow);
+        }
+    }
+
+    Ok(ExportPublish {
+        published: true,
+        shadows,
+    })
+}
+
+/// Walk `$PATH` and report the first non-LAR hit that precedes the LAR export.
+pub fn detect_path_shadow(store: &Store, cmd: &str) -> Result<Option<PathShadow>> {
+    let export = store.paths().bin.join(cmd);
+    let path_var = env::var_os("PATH").unwrap_or_default();
+    let path_var = path_var.to_string_lossy();
+
+    for dir in path_var.split(':') {
+        if dir.is_empty() {
+            continue;
+        }
+        let candidate = Path::new(dir).join(cmd);
+        if !looks_runnable(&candidate) {
+            continue;
+        }
+        if is_lar_export(store, &candidate)? {
+            // LAR export found first — no shadow.
+            return Ok(None);
+        }
+        return Ok(Some(PathShadow {
+            command: cmd.to_string(),
+            export,
+            shadowed_by: candidate,
+        }));
+    }
+    Ok(None)
+}
+
+fn looks_runnable(path: &Path) -> bool {
+    let Ok(meta) = fs::symlink_metadata(path) else {
+        return false;
+    };
+    if meta.file_type().is_dir() {
+        return false;
+    }
+    if meta.file_type().is_symlink() {
+        return true;
+    }
+    meta.permissions().mode() & 0o111 != 0
+}
+
+/// Remove PATH exports owned by `app_id`.
+pub fn remove(store: &Store, app_id: &str) -> Result<()> {
+    let exports_dir = store.paths().share_exports();
+    let cmds = list_cmds_for_app(&exports_dir, app_id)?;
+    for cmd in cmds {
+        let meta_path = exports_dir.join(format!("{cmd}.toml"));
+        if meta_path.is_file() {
+            fs::remove_file(&meta_path).map_err(|source| Error::Io {
+                path: meta_path,
+                source,
+            })?;
+        }
+        // Remove session link before prefix link so ownership checks aren't
+        // confused by a dangling symlink into an already-removed prefix bin.
+        for path in [
+            store.paths().bin.join(&cmd),
+            store.paths().share_bin().join(&cmd),
+        ] {
+            if path_exists(&path) {
+                fs::remove_file(&path).map_err(|source| Error::Io {
+                    path: path.clone(),
+                    source,
+                })?;
+            }
+        }
+    }
+    // Also clear legacy shell shims with the old marker.
+    remove_legacy_shell_shims(store, app_id)?;
+    Ok(())
+}
+
+/// Absolute path of the prefix-owned export link for an entry binary relative path.
+pub fn prefix_shim_path(store: &Store, binary_rel: &str) -> Result<PathBuf> {
+    let cmd = command_name(binary_rel)?;
+    Ok(store.paths().share_bin().join(cmd))
+}
+
+/// Load export metadata for `cmd` under `prefix`.
+pub fn load_export_meta(prefix: &Path, cmd: &str) -> Result<Option<ExportMeta>> {
+    let path = prefix
+        .join("share")
+        .join("lar")
+        .join("exports")
+        .join(format!("{cmd}.toml"));
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let text = fs::read_to_string(&path).map_err(|source| Error::Io {
+        path: path.clone(),
+        source,
+    })?;
+    let meta: ExportMeta = toml::from_str(&text).map_err(|err| {
+        Error::Other(format!(
+            "invalid export metadata {}: {err}",
+            path.display()
+        ))
+    })?;
+    if meta.format != EXPORT_FORMAT {
+        return Err(Error::Other(format!(
+            "unsupported export format {} at {}",
+            meta.format,
+            path.display()
+        )));
+    }
+    Ok(Some(meta))
+}
+
+/// Resolve export metadata by walking argv0 (and symlink targets) for `…/bin/{cmd}`.
+pub fn resolve_export_from_argv0(argv0: &Path) -> Result<Option<(String, ExportMeta)>> {
+    let mut current = absolute_argv0(argv0)?;
+    for _ in 0..16 {
+        if let Some(cmd) = current.file_name().and_then(|s| s.to_str()) {
+            if let Some(bin_dir) = current.parent() {
+                if bin_dir.file_name().and_then(|s| s.to_str()) == Some("bin") {
+                    if let Some(prefix) = bin_dir.parent() {
+                        if let Some(meta) = load_export_meta(prefix, cmd)? {
+                            return Ok(Some((cmd.to_string(), meta)));
+                        }
+                    }
+                }
+            }
+        }
+
+        let meta = match fs::symlink_metadata(&current) {
+            Ok(m) => m,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => break,
+            Err(source) => {
+                return Err(Error::Io {
+                    path: current,
+                    source,
+                });
+            }
+        };
+        if !meta.file_type().is_symlink() {
+            break;
+        }
+        let target = fs::read_link(&current).map_err(|source| Error::Io {
+            path: current.clone(),
+            source,
+        })?;
+        current = if target.is_absolute() {
+            target
+        } else {
+            current
+                .parent()
+                .unwrap_or_else(|| Path::new("."))
+                .join(target)
+        };
+    }
+    Ok(None)
+}
+
+fn list_cmds_for_app(exports_dir: &Path, app_id: &str) -> Result<Vec<String>> {
+    let mut cmds = Vec::new();
+    if !exports_dir.is_dir() {
+        return Ok(cmds);
+    }
+    let entries = fs::read_dir(exports_dir).map_err(|source| Error::Io {
+        path: exports_dir.to_path_buf(),
+        source,
+    })?;
+    for entry in entries {
+        let entry = entry.map_err(|source| Error::Io {
+            path: exports_dir.to_path_buf(),
+            source,
+        })?;
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("toml") {
+            continue;
+        }
+        let text = match fs::read_to_string(&path) {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+        let Ok(meta) = toml::from_str::<ExportMeta>(&text) else {
+            continue;
+        };
+        if meta.app_id == app_id {
+            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                cmds.push(stem.to_string());
+            }
+        }
+    }
+    Ok(cmds)
+}
+
+fn write_meta(path: &Path, meta: &ExportMeta) -> Result<()> {
+    let body = toml::to_string_pretty(meta)
+        .map_err(|err| Error::Other(format!("serialize export metadata: {err}")))?;
+    fs::write(path, body).map_err(|source| Error::Io {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
+fn replace_symlink(link: &Path, target: &Path) -> Result<()> {
+    if path_exists(link) {
+        fs::remove_file(link).map_err(|source| Error::Io {
+            path: link.to_path_buf(),
+            source,
+        })?;
+    }
+    if let Some(parent) = link.parent() {
+        fs::create_dir_all(parent).map_err(|source| Error::Io {
+            path: parent.to_path_buf(),
+            source,
+        })?;
+    }
+    symlink(target, link).map_err(|source| Error::Io {
+        path: link.to_path_buf(),
+        source,
+    })
+}
+
+fn path_exists(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok()
+}
+
+fn is_lar_export(store: &Store, path: &Path) -> Result<bool> {
+    // Legacy shell shim.
+    if path.is_file() && !path.is_symlink() {
+        if let Ok(text) = fs::read_to_string(path) {
+            if text.lines().any(|l| l.trim().starts_with("# lar-export:")) {
+                return Ok(true);
+            }
+        }
+    }
+
+    let lar_link = store.paths().libexec_lar();
+    let Ok(lar_canon) = fs::canonicalize(&lar_link) else {
+        return Ok(false);
+    };
+
+    let mut current = path.to_path_buf();
+    for _ in 0..16 {
+        let meta = match fs::symlink_metadata(&current) {
+            Ok(m) => m,
+            Err(_) => return Ok(false),
+        };
+        if meta.file_type().is_symlink() {
+            let target = fs::read_link(&current).map_err(|source| Error::Io {
+                path: current.clone(),
+                source,
+            })?;
+            current = if target.is_absolute() {
+                target
+            } else {
+                current
+                    .parent()
+                    .unwrap_or_else(|| Path::new("."))
+                    .join(target)
+            };
+            continue;
+        }
+        if let Ok(canon) = fs::canonicalize(&current) {
+            return Ok(canon == lar_canon);
+        }
+        return Ok(false);
+    }
+    Ok(false)
+}
+
+fn remove_legacy_shell_shims(store: &Store, app_id: &str) -> Result<()> {
+    let marker = format!("# lar-export: {app_id}");
+    for dir in [store.paths().share_bin(), store.paths().bin.clone()] {
+        if !dir.is_dir() {
+            continue;
+        }
+        let entries = fs::read_dir(&dir).map_err(|source| Error::Io {
+            path: dir.clone(),
+            source,
+        })?;
+        for entry in entries {
+            let entry = entry.map_err(|source| Error::Io {
+                path: dir.clone(),
+                source,
+            })?;
+            let path = entry.path();
+            if path.is_symlink() || !path.is_file() {
+                continue;
+            }
+            let Ok(text) = fs::read_to_string(&path) else {
+                continue;
+            };
+            if text.lines().any(|l| l.trim() == marker) {
+                fs::remove_file(&path).map_err(|source| Error::Io {
+                    path: path.clone(),
+                    source,
+                })?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn command_name(rel: &str) -> Result<String> {
+    let name = Path::new(rel)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| Error::Other(format!("invalid entry binary path `{rel}`")))?;
+    Ok(name.to_string())
+}
+
+fn absolute_argv0(argv0: &Path) -> Result<PathBuf> {
+    if argv0.is_absolute() {
+        return Ok(argv0.to_path_buf());
+    }
+    let cwd = std::env::current_dir().map_err(|source| Error::Io {
+        path: PathBuf::from("."),
+        source,
+    })?;
+    Ok(cwd.join(argv0))
+}

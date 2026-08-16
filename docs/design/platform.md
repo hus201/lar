@@ -37,7 +37,7 @@ Application security continues using Linux mechanisms:
 - File permissions.
 - Linux security frameworks.
 
-SxS keeps legacy `(id, version)` trees on disk until the user removes them. LAR surfaces advisory risk; it does not silently delete store packages.
+SxS keeps previous `(id, version)` trees on disk until the user removes them. LAR surfaces advisory risk; it does not silently delete store packages.
 
 ## Update Model
 

@@ -4,10 +4,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use lar_package::load_manifest;
 use lar_resolver::{resolve_manifest, verify_lockfile_ready, write_lockfile, Lockfile};
-use lar_runtime::{build, ComposeMode};
+use lar_runtime::{build, run_runtime_entry, ComposeMode};
 use lar_store::{Store, StoredPackage};
 use semver::Version;
 
+use crate::desktop;
+use crate::exports;
+use crate::launch_cmd::ensure_libexec_lar;
 use crate::record::{InstallPackage, InstallRecord, INSTALL_FORMAT};
 use crate::Error;
 use crate::Result;
@@ -18,6 +21,8 @@ pub struct InstallOutcome {
     pub record: InstallRecord,
     /// True when an existing install of the same id was replaced (`--force`).
     pub replaced: bool,
+    /// PATH shadow warnings from export publish.
+    pub path_shadows: Vec<crate::exports::PathShadow>,
 }
 
 /// Result of [`update`].
@@ -29,6 +34,7 @@ pub enum UpdateOutcome {
     Updated {
         from: InstallRecord,
         to: InstallRecord,
+        path_shadows: Vec<crate::exports::PathShadow>,
     },
 }
 
@@ -39,6 +45,8 @@ pub struct RollbackOutcome {
     pub record: InstallRecord,
     /// Displaced active (now previous).
     pub previous: InstallRecord,
+    /// PATH shadow warnings from export publish.
+    pub path_shadows: Vec<crate::exports::PathShadow>,
 }
 
 /// Where to take the application root from.
@@ -113,6 +121,8 @@ pub fn install(
 
     let record = compose_install(store, &root, compose)?;
     activate_install(store, &record, displaced.as_ref())?;
+    let exports = exports::publish(store, &record)?;
+    desktop::publish(store, &record)?;
 
     if let Some(older) = older_previous {
         let keep_active = older.runtime_id == record.runtime_id;
@@ -124,7 +134,11 @@ pub fn install(
         }
     }
 
-    Ok(InstallOutcome { record, replaced })
+    Ok(InstallOutcome {
+        record,
+        replaced,
+        path_shadows: exports.shadows,
+    })
 }
 
 /// Update an installed app to the newest newer semver from apps sources.
@@ -161,6 +175,8 @@ pub fn update(store: &Store, app_id: &str) -> Result<UpdateOutcome> {
     let root = ensure_root(store, &source)?;
     let record = compose_install(store, &root, current.compose)?;
     activate_install(store, &record, Some(&current))?;
+    let exports = exports::publish(store, &record)?;
+    desktop::publish(store, &record)?;
 
     if let Some(older) = older_previous {
         let keep_active = older.runtime_id == record.runtime_id;
@@ -173,6 +189,7 @@ pub fn update(store: &Store, app_id: &str) -> Result<UpdateOutcome> {
     Ok(UpdateOutcome::Updated {
         from: current,
         to: record,
+        path_shadows: exports.shadows,
     })
 }
 
@@ -210,10 +227,57 @@ pub fn rollback(store: &Store, app_id: &str) -> Result<RollbackOutcome> {
         source,
     })?;
 
+    let exports = exports::publish(store, &previous)?;
+    desktop::publish(store, &previous)?;
+
     Ok(RollbackOutcome {
         record: previous,
         previous: active,
+        path_shadows: exports.shadows,
     })
+}
+
+/// Launch an installed application via its composed runtime.
+pub fn launch(
+    store: &Store,
+    app_id: &str,
+    binary: Option<&str>,
+    args: &[String],
+) -> Result<std::process::ExitStatus> {
+    cleanup_tmp_installs(store);
+    let _ = ensure_libexec_lar(store)?;
+    let record = load(store, app_id)?;
+    let runtime_path = store.paths().runtimes.join(&record.runtime_id);
+    if !runtime_path.is_dir() {
+        return Err(Error::RuntimeMissing {
+            id: app_id.to_string(),
+            runtime_id: record.runtime_id.clone(),
+        });
+    }
+    let root = store
+        .get(&record.id, &record.version)?
+        .ok_or_else(|| Error::NotInStore {
+            id: record.id.clone(),
+            version: record.version.clone(),
+        })?;
+    let manifest = load_manifest(&root.path.join("package.toml"))?;
+    let entry = manifest.entry.as_ref().ok_or_else(|| Error::NoEntry(app_id.to_string()))?;
+    if let Some(rel) = binary {
+        if !entry.binaries.iter().any(|b| b == rel) {
+            return Err(Error::UnknownBinary {
+                id: app_id.to_string(),
+                binary: rel.to_string(),
+            });
+        }
+    }
+    Ok(run_runtime_entry(
+        store,
+        &runtime_path,
+        &record.id,
+        &record.version,
+        binary,
+        args,
+    )?)
 }
 
 /// Remove an install record and its composed runtimes. Store packages are kept.
@@ -221,6 +285,9 @@ pub fn uninstall(store: &Store, app_id: &str) -> Result<InstallRecord> {
     cleanup_tmp_installs(store);
     let record = load(store, app_id)?;
     let previous = load_previous(store, app_id)?;
+
+    desktop::remove(store, app_id)?;
+    exports::remove(store, app_id)?;
 
     remove_runtime_dir(store, &record.runtime_id);
     if let Some(prev) = &previous {

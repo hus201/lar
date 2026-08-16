@@ -1,15 +1,17 @@
 mod cli;
 
+use std::env;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::Parser;
 
 use cli::{Cli, Commands, PackageCmd, RepoCmd, RuntimeCmd, StoreCmd, TrustCmd};
 use lar_manager::{
-    install as install_app, list as list_installs, rollback as rollback_app,
-    uninstall as uninstall_app, update as update_app, InstallSource, UpdateOutcome,
+    exec_path_export, install as install_app, launch as launch_app, list as list_installs,
+    rollback as rollback_app, uninstall as uninstall_app, update as update_app, InstallSource,
+    UpdateOutcome,
 };
 use lar_package::{init_package, inspect, pack, validate_package, InitOptions};
 use lar_repo::{
@@ -24,6 +26,10 @@ use lar_runtime::{
 use lar_store::{prefix, Paths, Store};
 
 fn main() -> ExitCode {
+    if let Some(code) = maybe_path_export_trampoline() {
+        return code;
+    }
+
     let cli = Cli::parse();
 
     match run(cli.system, cli.command) {
@@ -31,6 +37,24 @@ fn main() -> ExitCode {
         Err(message) => {
             eprintln!("{message}");
             ExitCode::FAILURE
+        }
+    }
+}
+
+/// When `lar` is invoked via a PATH-export symlink (`argv0` basename ≠ `lar`),
+/// trampoline into the installed entry binary.
+fn maybe_path_export_trampoline() -> Option<ExitCode> {
+    let argv0 = env::args_os().next().map(PathBuf::from)?;
+    let base = argv0.file_name()?.to_str()?;
+    if base == "lar" {
+        return None;
+    }
+    let args: Vec<String> = env::args().skip(1).collect();
+    match exec_path_export(&argv0, &args) {
+        Ok(()) => Some(ExitCode::SUCCESS),
+        Err(err) => {
+            eprintln!("{err}");
+            Some(ExitCode::FAILURE)
         }
     }
 }
@@ -61,7 +85,10 @@ fn run(system: bool, command: Commands) -> Result<ExitCode, String> {
             let compose: ComposeMode = compose
                 .parse()
                 .map_err(|e: lar_runtime::Error| e.to_string())?;
-            run_launch(system, &lockfile, compose, &args)
+            run_from_lockfile(system, &lockfile, compose, &args)
+        }
+        Commands::Launch { app, binary, args } => {
+            run_launch_installed(system, &app, binary.as_deref(), &args)
         }
         Commands::Install {
             app,
@@ -123,6 +150,7 @@ fn run_install(system: bool, app: &str, compose: ComposeMode, force: bool) -> Re
         outcome.record.compose,
         outcome.record.runtime_id
     );
+    print_path_shadows(&outcome.path_shadows);
     Ok(())
 }
 
@@ -154,11 +182,16 @@ fn run_update(system: bool, app: &str) -> Result<(), String> {
         UpdateOutcome::UpToDate(rec) => {
             println!("up to date {} {}", rec.id, rec.version);
         }
-        UpdateOutcome::Updated { from, to } => {
+        UpdateOutcome::Updated {
+            from,
+            to,
+            path_shadows,
+        } => {
             println!(
                 "updated {} {} -> {} (runtime {})",
                 to.id, from.version, to.version, to.runtime_id
             );
+            print_path_shadows(&path_shadows);
         }
     }
     Ok(())
@@ -171,7 +204,14 @@ fn run_rollback(system: bool, app: &str) -> Result<(), String> {
         "rolled back {} {} (runtime {})",
         outcome.record.id, outcome.record.version, outcome.record.runtime_id
     );
+    print_path_shadows(&outcome.path_shadows);
     Ok(())
+}
+
+fn print_path_shadows(shadows: &[lar_manager::PathShadow]) {
+    for shadow in shadows {
+        eprintln!("warning: {shadow}");
+    }
 }
 
 fn run_runtime(system: bool, command: RuntimeCmd) -> Result<(), String> {
@@ -274,7 +314,7 @@ fn run_runtime(system: bool, command: RuntimeCmd) -> Result<(), String> {
     }
 }
 
-fn run_launch(
+fn run_from_lockfile(
     system: bool,
     lockfile: &Path,
     compose: ComposeMode,
@@ -282,6 +322,20 @@ fn run_launch(
 ) -> Result<ExitCode, String> {
     let store = open_store(system);
     let status = run_app(lockfile, &store, compose, args).map_err(|err| err.to_string())?;
+    match status.code() {
+        Some(code) => Ok(ExitCode::from(code as u8)),
+        None => Ok(ExitCode::FAILURE),
+    }
+}
+
+fn run_launch_installed(
+    system: bool,
+    app: &str,
+    binary: Option<&str>,
+    args: &[String],
+) -> Result<ExitCode, String> {
+    let store = open_store(system);
+    let status = launch_app(&store, app, binary, args).map_err(|err| err.to_string())?;
     match status.code() {
         Some(code) => Ok(ExitCode::from(code as u8)),
         None => Ok(ExitCode::FAILURE),

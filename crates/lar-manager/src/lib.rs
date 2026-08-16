@@ -1,15 +1,21 @@
 //! Application lifecycle: install records under `{prefix}/installs/`.
 
+mod desktop;
 mod error;
+mod exports;
+mod launch_cmd;
 mod ops;
 mod record;
+mod trampoline;
 
 pub use error::Error;
+pub use exports::{ExportMeta, ExportPublish, PathShadow, EXPORT_FORMAT};
 pub use ops::{
-    install, list, load, load_previous, rollback, uninstall, update, InstallOutcome, InstallSource,
-    RollbackOutcome, UpdateOutcome,
+    install, launch, list, load, load_previous, rollback, uninstall, update, InstallOutcome,
+    InstallSource, RollbackOutcome, UpdateOutcome,
 };
 pub use record::{InstallPackage, InstallRecord, INSTALL_FORMAT};
+pub use trampoline::exec_path_export;
 
 /// Result alias for this crate.
 pub type Result<T> = std::result::Result<T, Error>;
@@ -26,6 +32,18 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
+
+    fn test_store(dir: &Path) -> Store {
+        let prefix = dir.join("prefix");
+        let applications = dir.join("xdg-applications");
+        let bin = dir.join("xdg-bin");
+        Store::open(Paths::from_prefix_with_exports(
+            prefix,
+            false,
+            applications,
+            bin,
+        ))
+    }
 
     fn add_pkg(
         store: &Store,
@@ -85,7 +103,7 @@ mod tests {
     #[test]
     fn install_from_lar_and_uninstall() {
         let dir = tempdir().unwrap();
-        let store = Store::open(Paths::from_prefix(dir.path().join("prefix"), false));
+        let store = test_store(dir.path());
         add_pkg(
             &store,
             dir.path(),
@@ -165,7 +183,7 @@ mod tests {
     #[test]
     fn install_from_store_id_and_force_replace() {
         let dir = tempdir().unwrap();
-        let store = Store::open(Paths::from_prefix(dir.path().join("prefix"), false));
+        let store = test_store(dir.path());
         add_pkg(
             &store,
             dir.path(),
@@ -213,7 +231,7 @@ mod tests {
     #[test]
     fn install_archive_rejects_hash_mismatch_on_already_exists() {
         let dir = tempdir().unwrap();
-        let store = Store::open(Paths::from_prefix(dir.path().join("prefix"), false));
+        let store = test_store(dir.path());
         let first = add_pkg(
             &store,
             dir.path(),
@@ -305,5 +323,210 @@ mod tests {
                 version: Some("1.2.3".into())
             }
         );
+    }
+
+    #[test]
+    fn desktop_publish_launch_and_remove() {
+        let dir = tempdir().unwrap();
+        let store = test_store(dir.path());
+
+        let pkg = dir.path().join("app-src");
+        init_package(
+            &pkg,
+            &InitOptions {
+                id: "org.example.deskapp".into(),
+                name: "DeskApp".into(),
+                version: "0.1.0".into(),
+                force: false,
+            },
+        )
+        .unwrap();
+        let bin = pkg.join("files/bin");
+        fs::create_dir_all(&bin).unwrap();
+        let script = bin.join("app");
+        fs::write(&script, "#!/bin/sh\necho launched\n").unwrap();
+        let mut perms = fs::metadata(&script).unwrap().permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&script, perms).unwrap();
+        fs::write(pkg.join("files/icon.png"), b"fake").unwrap();
+        let mut manifest = load_manifest(&pkg.join("package.toml")).unwrap();
+        manifest.entry = Some(lar_package::Entry {
+            default: Some("bin/app".into()),
+            binaries: vec!["bin/app".into()],
+        });
+        manifest.desktop = Some(lar_package::Desktop {
+            name: Some("My Desk App".into()),
+            icon: Some("icon.png".into()),
+            categories: Some(vec!["Utility".into()]),
+        });
+        fs::write(
+            pkg.join("package.toml"),
+            toml::to_string_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+        let app_lar = dir.path().join("desk.lar");
+        pack(&pkg, &app_lar).unwrap();
+
+        let outcome = install(
+            &store,
+            &InstallSource::Archive(app_lar),
+            ComposeMode::Symlink,
+            false,
+        )
+        .unwrap();
+        let prefix_desktop = store
+            .paths()
+            .share_applications()
+            .join("org.example.deskapp.desktop");
+        let xdg_desktop = store
+            .paths()
+            .applications
+            .join("lar-org.example.deskapp.desktop");
+        assert!(prefix_desktop.is_file(), "{}", prefix_desktop.display());
+        assert!(xdg_desktop.is_file(), "{}", xdg_desktop.display());
+        let body = fs::read_to_string(&prefix_desktop).unwrap();
+        assert!(body.contains("Name=My Desk App"), "{body}");
+        assert!(body.contains("/bin/app"), "{body}");
+        assert!(body.contains("Categories=Utility;"), "{body}");
+        assert!(body.contains("Icon="), "{body}");
+        assert_eq!(fs::read_to_string(&xdg_desktop).unwrap(), body);
+
+        let status = launch(&store, "org.example.deskapp", None, &[]).unwrap();
+        assert!(status.success());
+
+        let prefix_shim = store.paths().share_bin().join("app");
+        let session_shim = store.paths().bin.join("app");
+        assert!(prefix_shim.is_symlink(), "{}", prefix_shim.display());
+        assert!(session_shim.is_symlink(), "{}", session_shim.display());
+        let meta_path = store.paths().share_exports().join("app.toml");
+        assert!(meta_path.is_file(), "{}", meta_path.display());
+        let meta = fs::read_to_string(&meta_path).unwrap();
+        assert!(meta.contains("org.example.deskapp"), "{meta}");
+        assert!(meta.contains("bin/app") || meta.contains("/files/bin/app"), "{meta}");
+        assert!(store.paths().libexec_lar().is_symlink() || store.paths().libexec_lar().exists());
+        let desktop = fs::read_to_string(&prefix_desktop).unwrap();
+        assert!(
+            desktop.contains(prefix_shim.to_str().unwrap())
+                || desktop.contains("/bin/app"),
+            "{desktop}"
+        );
+
+        uninstall(&store, "org.example.deskapp").unwrap();
+        assert!(!prefix_desktop.exists());
+        assert!(!xdg_desktop.exists());
+        assert!(!prefix_shim.exists());
+        assert!(!session_shim.exists());
+        assert!(!meta_path.exists());
+        assert!(!store
+            .paths()
+            .runtimes
+            .join(&outcome.record.runtime_id)
+            .exists());
+    }
+
+    #[test]
+    fn path_export_refuses_foreign_file() {
+        let dir = tempdir().unwrap();
+        let store = test_store(dir.path());
+        let session_bin = store.paths().bin.clone();
+        fs::create_dir_all(&session_bin).unwrap();
+        fs::write(session_bin.join("app"), "#!/bin/sh\necho foreign\n").unwrap();
+
+        add_pkg(
+            &store,
+            dir.path(),
+            "org.example.clash",
+            "1.0.0",
+            &[],
+            &[("bin/app", "#!/bin/sh\necho ok\n")],
+            Some("bin/app"),
+        );
+        let err = install(
+            &store,
+            &InstallSource::parse("org.example.clash").unwrap(),
+            ComposeMode::Symlink,
+            false,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::ExportCollision { .. }), "{err}");
+    }
+
+    #[test]
+    fn path_export_warns_when_shadowed_on_path() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempdir().unwrap();
+        let store = test_store(dir.path());
+        let host_bin = dir.path().join("host-bin");
+        fs::create_dir_all(&host_bin).unwrap();
+        let host_app = host_bin.join("app");
+        fs::write(&host_app, "#!/bin/sh\necho host\n").unwrap();
+        let mut perms = fs::metadata(&host_app).unwrap().permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&host_app, perms).unwrap();
+
+        add_pkg(
+            &store,
+            dir.path(),
+            "org.example.shadow",
+            "1.0.0",
+            &[],
+            &[("bin/app", "#!/bin/sh\necho lar\n")],
+            Some("bin/app"),
+        );
+
+        // Host dir first so it shadows the LAR session export.
+        let path = format!(
+            "{}:{}",
+            host_bin.display(),
+            store.paths().bin.display()
+        );
+        std::env::set_var("PATH", &path);
+
+        let outcome = install(
+            &store,
+            &InstallSource::parse("org.example.shadow").unwrap(),
+            ComposeMode::Symlink,
+            false,
+        )
+        .unwrap();
+        assert_eq!(outcome.path_shadows.len(), 1);
+        assert_eq!(outcome.path_shadows[0].command, "app");
+        assert_eq!(outcome.path_shadows[0].shadowed_by, host_app);
+        let msg = outcome.path_shadows[0].to_string();
+        assert!(msg.contains("shadows LAR export"), "{msg}");
+    }
+
+    #[test]
+    fn no_desktop_without_entry() {
+        let dir = tempdir().unwrap();
+        let store = test_store(dir.path());
+        add_pkg(
+            &store,
+            dir.path(),
+            "org.example.libonly",
+            "1.0.0",
+            &[],
+            &[("lib.txt", "lib")],
+            None,
+        );
+        install(
+            &store,
+            &InstallSource::parse("org.example.libonly").unwrap(),
+            ComposeMode::Symlink,
+            false,
+        )
+        .unwrap();
+        assert!(!store
+            .paths()
+            .share_applications()
+            .join("org.example.libonly.desktop")
+            .exists());
+        assert!(!store
+            .paths()
+            .applications
+            .join("lar-org.example.libonly.desktop")
+            .exists());
+        assert!(!store.paths().share_bin().exists() || store.paths().share_bin().read_dir().unwrap().next().is_none());
     }
 }

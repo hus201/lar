@@ -1,6 +1,6 @@
 # Architecture Overview
 
-**Status:** Partial — SxS store, resolver (lockfile + version ranges), runtime, install records (including update/rollback), and package sources (fetch/signatures/advisories) are implemented; desktop launch remains planned.
+**Status:** Partial — SxS store, resolver (lockfile + version ranges), runtime, install records (including update/rollback), package sources (fetch/signatures/advisories), and desktop launch (`.desktop` + `lar launch`) are implemented.
 
 LAR consists of four major components.
 
@@ -82,7 +82,7 @@ The SxS Store is the source of truth for packages present on the machine.
 
 ## Runtime Resolver
 
-**Status:** Partial — resolve/lockfile (including fetch and version ranges), runtime compose/`lar run`, and install records are implemented; desktop launch planned — [resolve-lockfile.md](../implementation/resolve-lockfile.md), [runtime.md](../implementation/runtime.md), [install.md](../implementation/install.md), [repos.md](../implementation/repos.md)
+**Status:** Partial — resolve/lockfile (including fetch and version ranges), runtime compose/`lar run`, install records, and desktop launch are implemented — [resolve-lockfile.md](../implementation/resolve-lockfile.md), [runtime.md](../implementation/runtime.md), [install.md](../implementation/install.md), [desktop.md](../implementation/desktop.md), [repos.md](../implementation/repos.md)
 
 Responsible for creating application execution environments.
 
@@ -96,6 +96,6 @@ Responsibilities:
 
 ## Application lifecycle
 
-**Status:** Partial — [install.md](../implementation/install.md)
+**Status:** Partial — [install.md](../implementation/install.md), [desktop.md](../implementation/desktop.md)
 
-Install records under `{prefix}/installs/` track what the user installed, pin store packages, and point at a composed runtime. `lar update` / `lar rollback` keep a single previous generation — [install.md](../implementation/install.md).
+Install records under `{prefix}/installs/` track what the user installed, pin store packages, and point at a composed runtime. `lar update` / `lar rollback` keep a single previous generation. Apps with `[entry]` get a freedesktop `.desktop` entry launched via `lar launch`.
