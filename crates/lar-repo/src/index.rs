@@ -4,14 +4,17 @@ use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::trust::{key_id_from_public, sign_content_hash};
+use crate::trust::{key_id_from_public, sign_message, verify_message};
 use crate::Error;
 use crate::Result;
 
-/// Current index format (includes per-pin dependency metadata for resolve).
+/// Current index format (dependencies included in the signed pin payload).
 pub const INDEX_FORMAT: u32 = 2;
 /// Oldest index format still accepted when reading.
 pub const INDEX_FORMAT_MIN: u32 = 1;
+
+/// Domain-separated prefix for index pin signatures (format 2+).
+const INDEX_PIN_SIGNING_V1: &str = "lar-index-pin-v1";
 
 /// Published package index (`index.toml`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -39,8 +42,7 @@ pub struct IndexPackage {
     /// Declared `[dependencies]` from the package manifest.
     ///
     /// Present in format 2+ indexes so clients can resolve without downloading
-    /// `.lar` archives. Format 1 indexes omit this (defaults to empty); resolve
-    /// falls back to inspecting the archive for those pins.
+    /// `.lar` archives. Included in the signed pin payload for format 2+.
     #[serde(default)]
     pub dependencies: BTreeMap<String, String>,
 }
@@ -85,6 +87,54 @@ impl PackageIndex {
     /// True when dependency metadata in the index is authoritative for resolve.
     pub fn has_resolve_metadata(&self) -> bool {
         self.format >= 2
+    }
+}
+
+/// Canonical message signed for a format 2+ index pin.
+///
+/// Covers identity, archive location, content hash, and dependencies so resolve
+/// can trust index metadata without downloading the archive.
+pub fn index_pin_signing_message(pkg: &IndexPackage) -> String {
+    let mut lines = vec![
+        INDEX_PIN_SIGNING_V1.to_string(),
+        format!("id={}", pkg.id),
+        format!("version={}", pkg.version),
+        format!("content_hash={}", pkg.content_hash),
+        format!("file={}", pkg.file),
+    ];
+    for (dep_id, req) in &pkg.dependencies {
+        lines.push(format!("dep={dep_id}\t{req}"));
+    }
+    lines.join("\n")
+}
+
+/// Sign an index pin (format 2+ payload).
+pub fn sign_index_package(secret_key: &str, pkg: &IndexPackage) -> Result<String> {
+    sign_message(secret_key, index_pin_signing_message(pkg).as_bytes())
+}
+
+/// Verify an index pin signature for the given index format.
+///
+/// Format 2+: signature covers [`index_pin_signing_message`].
+/// Format 1: signature covers `content_hash` only (legacy).
+pub fn verify_index_package(public_key: &str, pkg: &IndexPackage, index_format: u32) -> Result<()> {
+    if index_format >= 2 {
+        verify_message(
+            public_key,
+            index_pin_signing_message(pkg).as_bytes(),
+            &pkg.signature,
+        )
+        .map_err(|_| Error::BadSignature {
+            id: pkg.id.clone(),
+            version: pkg.version.clone(),
+        })
+    } else {
+        crate::trust::verify_content_hash(public_key, &pkg.content_hash, &pkg.signature).map_err(
+            |_| Error::BadSignature {
+                id: pkg.id.clone(),
+                version: pkg.version.clone(),
+            },
+        )
     }
 }
 
@@ -173,16 +223,17 @@ pub fn build_index(dir: &Path, secret_key: &str) -> Result<PackageIndex> {
                     .into_owned()
             };
             let content_hash = archive.index.content_hash.clone();
-            let signature = sign_content_hash(secret_key, &content_hash)?;
-            packages.push(IndexPackage {
+            let mut pkg = IndexPackage {
                 id: archive.index.id,
                 version: archive.index.version,
                 content_hash,
                 file: rel,
                 key_id: key_id.clone(),
-                signature,
+                signature: String::new(),
                 dependencies: archive.manifest.dependencies,
-            });
+            };
+            pkg.signature = sign_index_package(secret_key, &pkg)?;
+            packages.push(pkg);
         }
     }
     packages.sort_by(|a, b| (&a.id, &a.version).cmp(&(&b.id, &b.version)));

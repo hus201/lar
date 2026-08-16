@@ -38,7 +38,7 @@ signature = "base64:…"
 dependencies = { "org.example.base" = "^1.0" }
 ```
 
-Format **2** embeds each pin’s `[dependencies]` so resolve can search without downloading `.lar` files. Format **1** indexes remain readable; resolve falls back to inspecting the archive for those pins. `lar repo publish` / `index` always write format 2.
+Format **2** embeds each pin’s `[dependencies]` and **signs** them with the pin (together with id/version/hash/file) so resolve can search without downloading `.lar` files. Format **1** indexes remain readable; resolve falls back to inspecting the archive for those pins. `lar repo publish` / `index` always write format 2.
 
 ## Source config
 
@@ -68,9 +68,9 @@ Legacy `fetch_priority` keys in older `sources.toml` files are ignored.
 ## Signatures and trust
 
 - Algorithm: Ed25519
-- Signed message: UTF-8 bytes of `content_hash` (e.g. `blake3:<hex>`)
-- Package signatures: each `index.toml` entry (`content_hash`, `key_id`, `signature`)
-- Advisory signatures: top-level `advisories.toml` fields (`content_hash`, `key_id`, `signature`)
+- **Index format 2+ package pins:** signature covers a canonical message including `id`, `version`, `content_hash`, `file`, and `dependencies` (so resolve can trust index metadata without downloading `.lar` files)
+- **Index format 1 (legacy):** signature covers UTF-8 `content_hash` only
+- Advisory signatures: top-level `advisories.toml` fields (`content_hash`, `key_id`, `signature`) — Ed25519 over the UTF-8 `content_hash` string
 - Trust store: `{prefix}/config/trust.toml`
 
 ```toml
@@ -108,6 +108,7 @@ url = "https://…"
 | Situation | Behavior |
 |-----------|----------|
 | Fetch hits `yanked = true` | **Refuse** (error) |
+| Resolve finds only yanked pins for a requirement | **Refuse** with explicit yank error (not a generic “no matching version”) |
 | Fetch/resolve/install hits non-yanked advisory | **Warn** on stderr; continue |
 | Package already in store and yanked | **Warn**; do not delete |
 | Present file missing/invalid hash or signature, or untrusted key | **Refuse** |
@@ -125,7 +126,8 @@ lar repo trust add <pubkey-or-file> [--comment TEXT]
 lar repo trust list
 lar repo trust remove <key_id>
 lar repo add [--name NAME] <path-or-url>
-lar repo list                 # priority order (1 = highest)
+lar repo list                          # priority order (1 = highest)
+lar repo move <source> --to N          # or --before/--after/--top/--bottom
 lar repo remove <name-or-uri>
 lar audit [--installed|--store]   # default: installed apps' pins
 ```

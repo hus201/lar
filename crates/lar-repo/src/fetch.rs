@@ -9,7 +9,7 @@ use crate::advisories::{verify_advisories, AdvisoriesFile};
 use crate::index::{IndexPackage, PackageIndex};
 use crate::sources::{load_sources, ordered_sources, SourceEntry};
 use crate::transport::{fetch_blob, parse_uri, read_advisories, read_index, SourceBase};
-use crate::trust::{find_trusted_key, load_trust, verify_content_hash};
+use crate::trust::{find_trusted_key, load_trust};
 use crate::Error;
 use crate::Result;
 
@@ -263,12 +263,7 @@ fn locate_verified_pin(
 
     let key = find_trusted_key(&trust, &pkg.key_id)
         .ok_or_else(|| Error::UntrustedKey(pkg.key_id.clone()))?;
-    verify_content_hash(&key.public_key, &pkg.content_hash, &pkg.signature).map_err(|_| {
-        Error::BadSignature {
-            id: id.to_string(),
-            version: version.to_string(),
-        }
-    })?;
+    crate::index::verify_index_package(&key.public_key, &pkg, index.format)?;
 
     Ok((base, index, pkg))
 }

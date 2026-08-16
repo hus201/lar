@@ -142,6 +142,86 @@ pub fn remove_source(store: &lar_store::Store, name_or_uri: &str) -> Result<Sour
     Ok(entry)
 }
 
+fn find_source_index(file: &SourcesFile, name_or_uri: &str) -> Result<usize> {
+    file.sources
+        .iter()
+        .position(|s| s.name == name_or_uri || s.uri == name_or_uri)
+        .ok_or_else(|| Error::SourceNotFound(name_or_uri.to_string()))
+}
+
+/// Move `source` to 1-based priority `position` (1 = highest).
+pub fn move_source(
+    store: &lar_store::Store,
+    name_or_uri: &str,
+    position: usize,
+) -> Result<SourceEntry> {
+    let mut file = load_sources(store)?;
+    if file.sources.is_empty() {
+        return Err(Error::SourceNotFound(name_or_uri.to_string()));
+    }
+    if position == 0 || position > file.sources.len() {
+        return Err(Error::InvalidSources(format!(
+            "priority position must be between 1 and {}",
+            file.sources.len()
+        )));
+    }
+    let from = find_source_index(&file, name_or_uri)?;
+    let to = position - 1;
+    if from != to {
+        let entry = file.sources.remove(from);
+        file.sources.insert(to, entry);
+    }
+    let entry = file.sources[to].clone();
+    save_sources(store, &file)?;
+    Ok(entry)
+}
+
+/// Move `source` immediately before `other` in priority order.
+pub fn move_source_before(
+    store: &lar_store::Store,
+    name_or_uri: &str,
+    before: &str,
+) -> Result<SourceEntry> {
+    let file = load_sources(store)?;
+    let from = find_source_index(&file, name_or_uri)?;
+    let before_idx = find_source_index(&file, before)?;
+    if from == before_idx {
+        return Err(Error::InvalidSources(
+            "cannot move a source before itself".into(),
+        ));
+    }
+    // After removal, insert at before_idx if from > before_idx stays same;
+    // if from < before_idx, before shifts left by one.
+    let insert_at = if from < before_idx {
+        before_idx - 1
+    } else {
+        before_idx
+    };
+    move_source(store, name_or_uri, insert_at + 1)
+}
+
+/// Move `source` immediately after `other` in priority order.
+pub fn move_source_after(
+    store: &lar_store::Store,
+    name_or_uri: &str,
+    after: &str,
+) -> Result<SourceEntry> {
+    let file = load_sources(store)?;
+    let from = find_source_index(&file, name_or_uri)?;
+    let after_idx = find_source_index(&file, after)?;
+    if from == after_idx {
+        return Err(Error::InvalidSources(
+            "cannot move a source after itself".into(),
+        ));
+    }
+    let insert_at = if from < after_idx {
+        after_idx
+    } else {
+        after_idx + 1
+    };
+    move_source(store, name_or_uri, insert_at + 1)
+}
+
 /// Sources in priority order (earlier in `sources.toml` = higher priority).
 pub fn ordered_sources(file: &SourcesFile) -> Vec<&SourceEntry> {
     file.sources.iter().collect()
@@ -168,4 +248,35 @@ pub fn default_source_name(uri: &str) -> String {
         .filter(|s| !s.is_empty())
         .unwrap_or("source")
         .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lar_store::{Paths, Store};
+    use tempfile::tempdir;
+
+    #[test]
+    fn move_source_reorders_priority() {
+        let dir = tempdir().unwrap();
+        let store = Store::open(Paths::from_prefix(dir.path().join("prefix"), false));
+        add_source(&store, "a".into(), "/a".into()).unwrap();
+        add_source(&store, "b".into(), "/b".into()).unwrap();
+        add_source(&store, "c".into(), "/c".into()).unwrap();
+
+        move_source(&store, "c", 1).unwrap();
+        let file = load_sources(&store).unwrap();
+        let names: Vec<_> = file.sources.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, ["c", "a", "b"]);
+
+        move_source_before(&store, "b", "a").unwrap();
+        let file = load_sources(&store).unwrap();
+        let names: Vec<_> = file.sources.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, ["c", "b", "a"]);
+
+        move_source_after(&store, "c", "b").unwrap();
+        let file = load_sources(&store).unwrap();
+        let names: Vec<_> = file.sources.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, ["b", "c", "a"]);
+    }
 }

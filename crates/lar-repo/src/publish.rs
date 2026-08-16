@@ -9,7 +9,7 @@ use crate::advisories::{
     compute_advisories_content_hash, parse_advisories, sign_advisories_in_dir, verify_advisories,
 };
 use crate::index::{build_index, parse_index, write_index, PackageIndex, INDEX_FORMAT};
-use crate::trust::{key_id_from_public, verify_content_hash, TrustFile, TrustedKey};
+use crate::trust::{key_id_from_public, TrustFile, TrustedKey};
 use crate::Error;
 use crate::Result;
 
@@ -229,15 +229,16 @@ pub fn validate_repo(dir: &Path, public_key: Option<&str>) -> Result<ValidateRep
                 archive: archive.index.content_hash,
             });
         }
+        if index.format >= 2 && archive.manifest.dependencies != pkg.dependencies {
+            return Err(Error::InvalidIndex(format!(
+                "dependencies for {} {} in index do not match archive manifest",
+                pkg.id, pkg.version
+            )));
+        }
         if let Some(ref trust) = trust {
             let key = crate::trust::find_trusted_key(trust, &pkg.key_id)
                 .ok_or_else(|| Error::UntrustedKey(pkg.key_id.clone()))?;
-            verify_content_hash(&key.public_key, &pkg.content_hash, &pkg.signature).map_err(
-                |_| Error::BadSignature {
-                    id: pkg.id.clone(),
-                    version: pkg.version.clone(),
-                },
-            )?;
+            crate::index::verify_index_package(&key.public_key, pkg, index.format)?;
         }
     }
 

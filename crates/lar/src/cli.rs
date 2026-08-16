@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand};
+use clap::{ArgGroup, Parser, Subcommand};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -228,6 +228,31 @@ pub enum RepoCmd {
     },
     /// List configured package sources
     List,
+    /// Change a source's priority (earlier = higher)
+    #[command(group(
+        ArgGroup::new("dest")
+            .required(true)
+            .args(["to", "before", "after", "top", "bottom"])
+    ))]
+    Move {
+        /// Source name or URI
+        source: String,
+        /// New 1-based priority position (1 = highest)
+        #[arg(long)]
+        to: Option<usize>,
+        /// Place immediately before this source
+        #[arg(long)]
+        before: Option<String>,
+        /// Place immediately after this source
+        #[arg(long)]
+        after: Option<String>,
+        /// Move to highest priority
+        #[arg(long)]
+        top: bool,
+        /// Move to lowest priority
+        #[arg(long)]
+        bottom: bool,
+    },
     /// Remove a configured package source
     Remove {
         /// Source name or URI

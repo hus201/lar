@@ -21,15 +21,16 @@ Today `lar resolve`:
 
 - Loads a local `package.toml`
 - Treats `[dependencies]` values as **semver requirements** (exact, `^`, `~`, comparisons); rejects bare `*`
+- Uses the **PubGrub** conflict-driven solver (highest matching versions preferred; one version per id)
 - For each dependency id:
-  1. Collect candidate versions that satisfy the requirement (local store ∪ configured sources; yanked index pins excluded)
-  2. Select the **highest compatible** version
+  1. Collect candidate versions that satisfy the requirement (local store ∪ configured sources; yanked index pins excluded — if only yanked pins match, resolve fails with an explicit yank error)
+  2. Select a compatible version via PubGrub (prefers highest)
   3. If that exact pin exists in multiple sources, take it from the **highest-priority** source (earlier in `sources.toml`)
   4. Never merge package contents from different sources
-- Peeks candidate metadata from the package index (format 2+) without downloading archives; fetches only the winning set. Legacy format 1 indexes fall back to archive inspect.
+- Peeks candidate metadata from the package index (format 2+; deps are part of the signed pin payload) without downloading archives; fetches only the winning set. Legacy format 1 indexes fall back to archive inspect.
 - On materialize, verifies archive `content_hash` and that manifest dependencies match the index metadata used during search
-- One version per id; when a later requirement conflicts with an earlier choice, the solver **backtracks** and tries older candidates
-- Hard conflicts remain when no single version satisfies all requirements; multi-candidate failures list each attempt
+- Dependency cycles in the selected graph are rejected
+- Unsatisfiable graphs produce a PubGrub derivation report
 - Verifies signatures/hashes and emits advisory warnings on materialize (refuses yanked on new fetch)
 - Writes `lar.lock` with **exact** pins only
 

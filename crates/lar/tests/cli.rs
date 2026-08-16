@@ -1504,8 +1504,8 @@ summary = "Yanked after ship"
     assert!(!resolve_yanked.status.success());
     let err = String::from_utf8_lossy(&resolve_yanked.stderr);
     assert!(
-        err.contains("yanked") || err.contains("matches requirement"),
-        "{err}"
+        err.contains("yanked"),
+        "expected explicit yank reason, got: {err}"
     );
 }
 
@@ -1786,6 +1786,74 @@ binaries = ["bin/app"]
         String::from_utf8_lossy(&list2.stdout).contains("0.1.0"),
         "{}",
         String::from_utf8_lossy(&list2.stdout)
+    );
+}
+
+#[test]
+fn repo_move_reorders_source_priority() {
+    let dir = tempfile::tempdir().unwrap();
+    let prefix = dir.path().join("prefix");
+
+    for (name, uri) in [("a", "/tmp/a"), ("b", "/tmp/b"), ("c", "/tmp/c")] {
+        let add = lar_user(&prefix)
+            .args(["repo", "add", "--name", name, uri])
+            .output()
+            .unwrap();
+        assert!(
+            add.status.success(),
+            "stderr={}",
+            String::from_utf8_lossy(&add.stderr)
+        );
+    }
+
+    let list = lar_user(&prefix).args(["repo", "list"]).output().unwrap();
+    assert!(list.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&list.stdout).trim(),
+        "1 a /tmp/a\n2 b /tmp/b\n3 c /tmp/c"
+    );
+
+    let mov = lar_user(&prefix)
+        .args(["repo", "move", "c", "--top"])
+        .output()
+        .unwrap();
+    assert!(
+        mov.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&mov.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&mov.stdout).contains("moved c to priority 1"),
+        "{}",
+        String::from_utf8_lossy(&mov.stdout)
+    );
+
+    let list = lar_user(&prefix).args(["repo", "list"]).output().unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&list.stdout).trim(),
+        "1 c /tmp/c\n2 a /tmp/a\n3 b /tmp/b"
+    );
+
+    let mov = lar_user(&prefix)
+        .args(["repo", "move", "b", "--before", "a"])
+        .output()
+        .unwrap();
+    assert!(mov.status.success());
+    let list = lar_user(&prefix).args(["repo", "list"]).output().unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&list.stdout).trim(),
+        "1 c /tmp/c\n2 b /tmp/b\n3 a /tmp/a"
+    );
+
+    let mov = lar_user(&prefix)
+        .args(["repo", "move", "c", "--to", "3"])
+        .output()
+        .unwrap();
+    assert!(mov.status.success());
+    let list = lar_user(&prefix).args(["repo", "list"]).output().unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&list.stdout).trim(),
+        "1 b /tmp/b\n2 a /tmp/a\n3 c /tmp/c"
     );
 }
 

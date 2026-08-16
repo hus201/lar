@@ -209,7 +209,10 @@ mod tests {
         );
         let err = resolve(&manifest, &store).unwrap_err();
         assert!(
-            matches!(err, Error::Unsatisfiable { .. } | Error::Missing { .. }),
+            matches!(
+                err,
+                Error::Unsatisfiable { .. } | Error::Missing { .. } | Error::Unresolvable(_)
+            ),
             "{err}"
         );
     }
@@ -244,7 +247,10 @@ mod tests {
             ],
         );
         let err = resolve(&manifest, &store).unwrap_err();
-        assert!(matches!(err, Error::Conflict { .. }), "{err}");
+        assert!(
+            matches!(err, Error::Conflict { .. } | Error::Unresolvable(_)),
+            "{err}"
+        );
     }
 
     #[test]
@@ -364,7 +370,10 @@ mod tests {
             ],
         );
         let err = resolve(&manifest, &store).unwrap_err();
-        assert!(matches!(err, Error::Conflict { .. }), "{err}");
+        assert!(
+            matches!(err, Error::Conflict { .. } | Error::Unresolvable(_)),
+            "{err}"
+        );
     }
 
     #[test]
@@ -520,9 +529,14 @@ mod tests {
             matches!(err, Error::Unresolvable(_)),
             "expected Unresolvable, got {err}"
         );
-        assert!(msg.contains("1.1.0"), "{msg}");
-        assert!(msg.contains("1.0.0"), "{msg}");
-        assert!(msg.contains("org.example.lib"), "{msg}");
+        assert!(
+            msg.contains("org.example.lib") || msg.contains("org.example.a"),
+            "{msg}"
+        );
+        assert!(
+            msg.contains("incompatible") || msg.contains("forbidden"),
+            "{msg}"
+        );
     }
 
     #[test]

@@ -9,21 +9,18 @@
 - Versions in manifests: semver **requirements** (`1.2.3`, `^1.2`, `~1.2.3`, `>=1.0, <2`); bare `*` rejected
 - Lockfile: **exact** pins only
 - Root package: always included from the local manifest (exact version)
-- Selection: collect matching candidates → highest compatible version → if the same pin is in multiple sources, highest-priority source; never merge contents; backtrack to older versions on conflict; peek during search, fetch winners only
+- Selection: PubGrub conflict-driven solve (prefer highest version); if the same pin is in multiple sources, highest-priority source; never merge contents; index metadata peek during search, fetch winners only
 
 ## Algorithm
 
 1. Load and validate the root manifest.
-2. Search the dependency graph (highest matching semver first; one version per id):
-   - Same id already chosen and matches → continue
-   - Same id already chosen and does not match → conflict (backtrack)
-   - Otherwise try candidates from `list_dep_versions` filtered by the requirement
-   - Load each candidate’s metadata from the index when available (format 2+; no `.lar` download); legacy format 1 falls back to download+inspect without `store.add`
-   - On conflict / unsatisfiable / missing further down, undo assignments along a trail and try the next-older candidate
-   - Cycles abort that path immediately (not retried as a soft search failure)
-   - If several candidates fail, the error lists each tried version and why
-3. Materialize: `fetch_into_store` only for winning pins; verify `content_hash` and that archive dependencies match index metadata used during search.
-4. Write `lar.lock` next to the root `package.toml`.
+2. Solve with **PubGrub** (conflict-driven clause learning; prefers highest matching semver):
+   - Requirements come from each package’s `[dependencies]`
+   - Candidate metadata from the index when available (format 2+; deps are in the signed pin payload; no `.lar` download); legacy format 1 falls back to download+inspect without `store.add`
+   - Unsatisfiable graphs yield a derivation report
+3. Reject dependency cycles in the selected graph.
+4. Materialize: `fetch_into_store` only for winning pins; verify `content_hash` and that archive dependencies match index metadata used during search.
+5. Write `lar.lock` next to the root `package.toml`.
 
 ## Lockfile format (`lar.lock`)
 

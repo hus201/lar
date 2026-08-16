@@ -23,8 +23,10 @@ lar repo add /path/to/my-repo
 # Explicit name:
 lar repo add --name vendor https://example.com/lar-vendor/
 
-# Sources are listed in priority order (earlier = higher). Prefer an overlay by
-# listing it first in sources.toml (or add it before other sources).
+# Sources are listed in priority order (1 = highest). Prefer an overlay with:
+lar repo move overlay --top
+# or: lar repo move overlay --before upstream
+# or: lar repo move overlay --to 1
 lar repo list
 ```
 

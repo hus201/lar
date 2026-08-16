@@ -111,9 +111,13 @@ fn bad_signature_refuses_fetch() {
     fs::create_dir_all(repo.join("packages")).unwrap();
     fs::copy(&lar_path, repo.join("packages/org.example.lib-1.0.0.lar")).unwrap();
     let mut index = build_index(&repo, &secret_a).unwrap();
-    // Replace with a valid Ed25519 signature from a different key over the same hash.
-    let content_hash = index.packages[0].content_hash.clone();
-    index.packages[0].signature = lar_repo::sign_content_hash(&secret_b, &content_hash).unwrap();
+    // Replace with a signature from a different key over the same pin payload.
+    let forged = {
+        let mut forged_pkg = index.packages[0].clone();
+        forged_pkg.signature = String::new();
+        lar_repo::sign_index_package(&secret_b, &forged_pkg).unwrap()
+    };
+    index.packages[0].signature = forged;
     write_index(&repo, &index).unwrap();
 
     add_source(&store, "main".into(), repo.display().to_string()).unwrap();
@@ -382,6 +386,11 @@ summary = "yanked"
         !versions.contains(&"1.0.0".to_string()),
         "yanked 1.0.0 should be excluded: {versions:?}"
     );
+
+    let yanked = lar_repo::list_yanked_dep_versions(&store, "org.example.lib").unwrap();
+    assert_eq!(yanked.len(), 1);
+    assert_eq!(yanked[0].version, "1.0.0");
+    assert_eq!(yanked[0].advisory, "LAR-YANK");
 }
 
 #[test]
@@ -455,6 +464,58 @@ fn resolve_metadata_from_index_without_archive() {
             || err.to_string().contains("IO"),
         "fetch should fail without archive: {err}"
     );
+}
+
+#[test]
+fn tampered_index_dependencies_fail_signature() {
+    use lar_package::{load_manifest, InitOptions};
+    use lar_repo::load_package_for_resolve;
+
+    let tmp = tempdir().unwrap();
+    let prefix = tmp.path().join("prefix");
+    let store = open_prefix(&prefix);
+
+    let (public, secret, _) = keygen().unwrap();
+    trust_add(&store, &public, "test").unwrap();
+
+    let pkg = tmp.path().join("pkg");
+    init_package(
+        &pkg,
+        &InitOptions {
+            id: "org.example.lib".into(),
+            name: "Lib".into(),
+            version: "1.0.0".into(),
+            force: false,
+        },
+    )
+    .unwrap();
+    fs::write(pkg.join("files/payload.txt"), b"deps").unwrap();
+    let mut manifest = load_manifest(&pkg.join("package.toml")).unwrap();
+    manifest
+        .dependencies
+        .insert("org.example.base".into(), "^1".into());
+    fs::write(
+        pkg.join("package.toml"),
+        toml::to_string_pretty(&manifest).unwrap(),
+    )
+    .unwrap();
+    let lar_path = pkg.join("org.example.lib-1.0.0.lar");
+    pack(&pkg, &lar_path).unwrap();
+
+    let repo = tmp.path().join("repo");
+    fs::create_dir_all(repo.join("packages")).unwrap();
+    fs::copy(&lar_path, repo.join("packages/org.example.lib-1.0.0.lar")).unwrap();
+    let mut index = build_index(&repo, &secret).unwrap();
+    // Attacker rewrites dependency metadata without resigning.
+    index.packages[0]
+        .dependencies
+        .insert("org.example.evil".into(), "1.0.0".into());
+    write_index(&repo, &index).unwrap();
+    add_source(&store, "main".into(), repo.display().to_string()).unwrap();
+
+    let mut warn = Cursor::new(Vec::new());
+    let err = load_package_for_resolve(&store, "org.example.lib", "1.0.0", &mut warn).unwrap_err();
+    assert!(matches!(err, lar_repo::Error::BadSignature { .. }), "{err}");
 }
 
 #[test]
