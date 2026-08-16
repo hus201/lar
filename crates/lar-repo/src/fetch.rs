@@ -1,7 +1,8 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, Write};
 
-use lar_package::inspect;
+use lar_package::{inspect, load_manifest, PackageManifest};
 use lar_store::{Store, StoredPackage};
 
 use crate::advisories::{verify_advisories, AdvisoriesFile};
@@ -10,6 +11,15 @@ use crate::transport::{fetch_blob, parse_uri, read_advisories, read_index};
 use crate::trust::{find_trusted_key, load_trust, verify_content_hash};
 use crate::Error;
 use crate::Result;
+
+/// Package metadata for dependency resolution without committing to the store.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvePackage {
+    pub id: String,
+    pub version: String,
+    pub content_hash: String,
+    pub dependencies: BTreeMap<String, String>,
+}
 
 /// Warning emitted for a matching advisory (non-yanked).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,8 +53,46 @@ impl AdvisoryWarning {
     }
 }
 
-/// Fetch `id@version` into the store from configured sources
-/// (`fetch_priority`: first-win or last-win among sources).
+/// Load package metadata for resolution without adding to the store.
+///
+/// Store hits are read in place. Missing pins are downloaded, signature-checked,
+/// and inspected, then the temporary blob is discarded.
+pub fn load_package_for_resolve(
+    store: &Store,
+    id: &str,
+    version: &str,
+    warn_out: &mut dyn Write,
+) -> Result<ResolvePackage> {
+    if let Some(existing) = store.get(id, version)? {
+        emit_store_hit_warnings(store, id, version, Some(&existing.content_hash), warn_out)?;
+        let manifest = load_manifest(&existing.path.join("package.toml"))?;
+        return resolve_package_from_manifest(id, version, &existing.content_hash, manifest);
+    }
+
+    let sources = load_sources(store)?;
+    let mut last_miss = None;
+    for src in ordered_sources(&sources) {
+        match peek_from_source(store, src, id, version, warn_out) {
+            Ok(pkg) => return Ok(pkg),
+            Err(Error::PackageNotFound { .. }) => {
+                last_miss = Some(());
+                continue;
+            }
+            Err(err) => return Err(err),
+        }
+    }
+
+    let _ = last_miss;
+    Err(Error::PackageNotFound {
+        id: id.to_string(),
+        version: version.to_string(),
+    })
+}
+
+/// Fetch `id@version` into the store from configured sources.
+///
+/// When multiple sources publish the same pin, the highest-priority source
+/// (earliest in `sources.toml`) wins. Contents are never merged across sources.
 pub fn fetch_into_store(
     store: &Store,
     id: &str,
@@ -78,6 +126,50 @@ pub fn fetch_into_store(
     })
 }
 
+fn resolve_package_from_manifest(
+    id: &str,
+    version: &str,
+    content_hash: &str,
+    manifest: PackageManifest,
+) -> Result<ResolvePackage> {
+    if manifest.package.id != id || manifest.package.version != version {
+        return Err(Error::Other(format!(
+            "package metadata has id/version {} {}, expected {id} {version}",
+            manifest.package.id, manifest.package.version
+        )));
+    }
+    Ok(ResolvePackage {
+        id: id.to_string(),
+        version: version.to_string(),
+        content_hash: content_hash.to_string(),
+        dependencies: manifest.dependencies,
+    })
+}
+
+fn peek_from_source(
+    store: &Store,
+    src: &SourceEntry,
+    id: &str,
+    version: &str,
+    warn_out: &mut dyn Write,
+) -> Result<ResolvePackage> {
+    let (tmp, index_hash) = download_verified_blob(store, src, id, version, warn_out)?;
+    let result = (|| {
+        let archive = inspect(&tmp)?;
+        if archive.index.content_hash != index_hash {
+            return Err(Error::HashMismatch {
+                id: id.to_string(),
+                version: version.to_string(),
+                index: index_hash.clone(),
+                archive: archive.index.content_hash,
+            });
+        }
+        resolve_package_from_manifest(id, version, &index_hash, archive.manifest)
+    })();
+    let _ = fs::remove_file(&tmp);
+    result
+}
+
 fn fetch_from_source(
     store: &Store,
     src: &SourceEntry,
@@ -85,6 +177,52 @@ fn fetch_from_source(
     version: &str,
     warn_out: &mut dyn Write,
 ) -> Result<StoredPackage> {
+    let (tmp, index_hash) = download_verified_blob(store, src, id, version, warn_out)?;
+    let result = (|| {
+        let archive = inspect(&tmp)?;
+        if archive.index.content_hash != index_hash {
+            return Err(Error::HashMismatch {
+                id: id.to_string(),
+                version: version.to_string(),
+                index: index_hash.clone(),
+                archive: archive.index.content_hash,
+            });
+        }
+        match store.add(&tmp) {
+            Ok(stored) => Ok(stored),
+            Err(lar_store::Error::AlreadyExists {
+                id: ref eid,
+                version: ref ever,
+            }) => {
+                let stored = store.get(eid, ever)?.ok_or_else(|| {
+                    Error::Other(format!(
+                        "package disappeared after AlreadyExists: {eid} {ever}"
+                    ))
+                })?;
+                if stored.content_hash != index_hash {
+                    return Err(Error::HashMismatch {
+                        id: id.to_string(),
+                        version: version.to_string(),
+                        index: index_hash.clone(),
+                        archive: stored.content_hash,
+                    });
+                }
+                Ok(stored)
+            }
+            Err(err) => Err(err.into()),
+        }
+    })();
+    let _ = fs::remove_file(&tmp);
+    result
+}
+
+fn download_verified_blob(
+    store: &Store,
+    src: &SourceEntry,
+    id: &str,
+    version: &str,
+    warn_out: &mut dyn Write,
+) -> Result<(std::path::PathBuf, String)> {
     let base = parse_uri(&src.uri)?;
     let index = read_index(&base)?;
     let trust = load_trust(store)?;
@@ -106,7 +244,6 @@ fn fetch_from_source(
         warn_out,
     )?;
 
-    let trust = load_trust(store)?;
     let key = find_trusted_key(&trust, &pkg.key_id)
         .ok_or_else(|| Error::UntrustedKey(pkg.key_id.clone()))?;
     verify_content_hash(&key.public_key, &pkg.content_hash, &pkg.signature).map_err(|_| {
@@ -117,42 +254,7 @@ fn fetch_from_source(
     })?;
 
     let tmp = fetch_blob(&base, &pkg.file)?;
-    let result = (|| {
-        let archive = inspect(&tmp)?;
-        if archive.index.content_hash != pkg.content_hash {
-            return Err(Error::HashMismatch {
-                id: id.to_string(),
-                version: version.to_string(),
-                index: pkg.content_hash.clone(),
-                archive: archive.index.content_hash,
-            });
-        }
-        match store.add(&tmp) {
-            Ok(stored) => Ok(stored),
-            Err(lar_store::Error::AlreadyExists {
-                id: ref eid,
-                version: ref ever,
-            }) => {
-                let stored = store.get(eid, ever)?.ok_or_else(|| {
-                    Error::Other(format!(
-                        "package disappeared after AlreadyExists: {eid} {ever}"
-                    ))
-                })?;
-                if stored.content_hash != pkg.content_hash {
-                    return Err(Error::HashMismatch {
-                        id: id.to_string(),
-                        version: version.to_string(),
-                        index: pkg.content_hash.clone(),
-                        archive: stored.content_hash,
-                    });
-                }
-                Ok(stored)
-            }
-            Err(err) => Err(err.into()),
-        }
-    })();
-    let _ = fs::remove_file(&tmp);
-    result
+    Ok((tmp, pkg.content_hash.clone()))
 }
 
 fn check_advisories_for_fetch(

@@ -1,7 +1,5 @@
-use std::fmt;
 use std::fs;
 use std::path::Path;
-use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
@@ -10,57 +8,21 @@ use crate::Result;
 
 pub const SOURCES_FORMAT: u32 = 1;
 
-/// How to choose among sources that publish the same exact pin.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
-#[serde(rename_all = "kebab-case")]
-pub enum FetchPriority {
-    /// First matching source in configuration order wins (default).
-    #[default]
-    FirstWin,
-    /// Last matching source in configuration order wins.
-    LastWin,
-}
-
-impl FetchPriority {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::FirstWin => "first-win",
-            Self::LastWin => "last-win",
-        }
-    }
-}
-
-impl fmt::Display for FetchPriority {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-impl FromStr for FetchPriority {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self> {
-        match s {
-            "first-win" | "first" => Ok(Self::FirstWin),
-            "last-win" | "last" => Ok(Self::LastWin),
-            other => Err(Error::InvalidSources(format!(
-                "invalid fetch_priority `{other}` (expected first-win or last-win)"
-            ))),
-        }
-    }
-}
-
 /// Configured package sources (`sources.toml`).
+///
+/// Source order is priority: earlier entries are higher priority when the same
+/// `(id, version)` pin exists in more than one source. Package contents are
+/// never merged across sources.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct SourcesFile {
     #[serde(default = "default_format")]
     pub format: u32,
-    /// Fetch conflict rule when multiple sources publish the same pin.
-    #[serde(default)]
-    pub fetch_priority: FetchPriority,
     #[serde(default)]
     pub sources: Vec<SourceEntry>,
+    /// Legacy `fetch_priority` from older configs; accepted on read, never written.
+    #[serde(default, skip_serializing)]
+    fetch_priority: Option<String>,
 }
 
 fn default_format() -> u32 {
@@ -112,8 +74,8 @@ pub fn load_sources(store: &lar_store::Store) -> Result<SourcesFile> {
     if !path.is_file() {
         return Ok(SourcesFile {
             format: SOURCES_FORMAT,
-            fetch_priority: FetchPriority::FirstWin,
             sources: Vec::new(),
+            fetch_priority: None,
         });
     }
     let text = fs::read_to_string(&path).map_err(|source| Error::Io {
@@ -150,7 +112,7 @@ pub fn save_sources(store: &lar_store::Store, file: &SourcesFile) -> Result<()> 
     Ok(())
 }
 
-/// Add a source.
+/// Add a source (appended = lowest priority among existing sources).
 pub fn add_source(store: &lar_store::Store, name: String, uri: String) -> Result<SourceEntry> {
     let mut file = load_sources(store)?;
     if file.sources.iter().any(|s| s.name == name) {
@@ -180,21 +142,9 @@ pub fn remove_source(store: &lar_store::Store, name_or_uri: &str) -> Result<Sour
     Ok(entry)
 }
 
-/// Set fetch priority (`first-win` or `last-win`).
-pub fn set_fetch_priority(store: &lar_store::Store, priority: FetchPriority) -> Result<FetchPriority> {
-    let mut file = load_sources(store)?;
-    file.fetch_priority = priority;
-    save_sources(store, &file)?;
-    Ok(priority)
-}
-
-/// Sources in the order fetch should try them (respects `fetch_priority`).
+/// Sources in priority order (earlier in `sources.toml` = higher priority).
 pub fn ordered_sources(file: &SourcesFile) -> Vec<&SourceEntry> {
-    let mut out: Vec<&SourceEntry> = file.sources.iter().collect();
-    if file.fetch_priority == FetchPriority::LastWin {
-        out.reverse();
-    }
-    out
+    file.sources.iter().collect()
 }
 
 /// Default source name from uri/path.

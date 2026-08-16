@@ -19,7 +19,7 @@ pub use audit::{audit, audit_should_fail, AuditFinding, AuditScope};
 pub use error::Error;
 pub use fetch::{
     collect_warnings_for_pin, emit_store_hit_warnings, ensure_package, fetch_into_store,
-    AdvisoryWarning,
+    load_package_for_resolve, AdvisoryWarning, ResolvePackage,
 };
 pub use index::{build_index, parse_index, write_index, IndexPackage, PackageIndex, INDEX_FORMAT};
 pub use publish::{
@@ -27,7 +27,7 @@ pub use publish::{
 };
 pub use sources::{
     add_source, default_source_name, load_sources, ordered_sources, remove_source, save_sources,
-    set_fetch_priority, FetchPriority, SourceEntry, SourcesFile, SOURCES_FORMAT,
+    SourceEntry, SourcesFile, SOURCES_FORMAT,
 };
 pub use transport::{parse_uri, read_advisories, read_index, SourceBase};
 pub use trust::{

@@ -399,10 +399,7 @@ mod tests {
             dir.path(),
             "org.example.app",
             "0.1.0",
-            &[
-                ("org.example.a", "^1"),
-                ("org.example.b", "1.0.0"),
-            ],
+            &[("org.example.a", "^1"), ("org.example.b", "1.0.0")],
         );
 
         let lock = resolve(&manifest, &store).unwrap();
@@ -418,6 +415,192 @@ mod tests {
             .unwrap();
         assert_eq!(a.version, "1.0.0");
         assert_eq!(c.version, "1.0.0");
+    }
+
+    #[test]
+    fn backtracking_multilevel() {
+        // A2→B2→C^2 conflicts with D→C^1; fall back through A1→B1→C^1.
+        let dir = tempdir().unwrap();
+        let store = Store::open(Paths::from_prefix(dir.path().join("prefix"), false));
+        add_pkg(&store, dir.path(), "org.example.c", "1.0.0", &[]);
+        add_pkg(&store, dir.path(), "org.example.c", "2.0.0", &[]);
+        add_pkg(
+            &store,
+            dir.path(),
+            "org.example.b",
+            "1.0.0",
+            &[("org.example.c", "^1")],
+        );
+        add_pkg(
+            &store,
+            dir.path(),
+            "org.example.b",
+            "2.0.0",
+            &[("org.example.c", "^2")],
+        );
+        add_pkg(
+            &store,
+            dir.path(),
+            "org.example.a",
+            "1.0.0",
+            &[("org.example.b", "^1")],
+        );
+        add_pkg(
+            &store,
+            dir.path(),
+            "org.example.a",
+            "1.5.0",
+            &[("org.example.b", "^2")],
+        );
+        add_pkg(
+            &store,
+            dir.path(),
+            "org.example.d",
+            "1.0.0",
+            &[("org.example.c", "^1")],
+        );
+        let manifest = write_root(
+            dir.path(),
+            "org.example.app",
+            "0.1.0",
+            &[("org.example.a", "^1"), ("org.example.d", "1.0.0")],
+        );
+
+        let lock = resolve(&manifest, &store).unwrap();
+        let ver = |id: &str| {
+            lock.packages
+                .iter()
+                .find(|p| p.id == id)
+                .unwrap()
+                .version
+                .clone()
+        };
+        assert_eq!(ver("org.example.a"), "1.0.0");
+        assert_eq!(ver("org.example.b"), "1.0.0");
+        assert_eq!(ver("org.example.c"), "1.0.0");
+    }
+
+    #[test]
+    fn unresolvable_lists_tried_candidates() {
+        let dir = tempdir().unwrap();
+        let store = Store::open(Paths::from_prefix(dir.path().join("prefix"), false));
+        add_pkg(&store, dir.path(), "org.example.lib", "1.0.0", &[]);
+        add_pkg(&store, dir.path(), "org.example.lib", "2.0.0", &[]);
+        add_pkg(
+            &store,
+            dir.path(),
+            "org.example.a",
+            "1.0.0",
+            &[("org.example.lib", "2.0.0")],
+        );
+        add_pkg(
+            &store,
+            dir.path(),
+            "org.example.a",
+            "1.1.0",
+            &[("org.example.lib", "2.0.0")],
+        );
+        add_pkg(
+            &store,
+            dir.path(),
+            "org.example.b",
+            "1.0.0",
+            &[("org.example.lib", "1.0.0")],
+        );
+        let manifest = write_root(
+            dir.path(),
+            "org.example.app",
+            "0.1.0",
+            &[("org.example.a", "^1"), ("org.example.b", "1.0.0")],
+        );
+
+        let err = resolve(&manifest, &store).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            matches!(err, Error::Unresolvable(_)),
+            "expected Unresolvable, got {err}"
+        );
+        assert!(msg.contains("1.1.0"), "{msg}");
+        assert!(msg.contains("1.0.0"), "{msg}");
+        assert!(msg.contains("org.example.lib"), "{msg}");
+    }
+
+    #[test]
+    fn backtrack_does_not_pollute_store_with_rejected_remote() {
+        use lar_repo::{add_source, build_index, keygen, trust_add, write_index};
+
+        let dir = tempdir().unwrap();
+        let store = Store::open(Paths::from_prefix(dir.path().join("prefix"), false));
+        let (public, secret, _) = keygen().unwrap();
+        trust_add(&store, &public, "").unwrap();
+
+        // Only C 1.0 is preinstalled; A versions and C 2.0 live only in the repo.
+        add_pkg(&store, dir.path(), "org.example.c", "1.0.0", &[]);
+        add_pkg(
+            &store,
+            dir.path(),
+            "org.example.b",
+            "1.0.0",
+            &[("org.example.c", "^1")],
+        );
+
+        let repo = dir.path().join("repo");
+        fs::create_dir_all(repo.join("packages")).unwrap();
+
+        for (id, version, deps) in [
+            ("org.example.c", "2.0.0", vec![]),
+            ("org.example.a", "1.0.0", vec![("org.example.c", "^1")]),
+            ("org.example.a", "1.1.0", vec![("org.example.c", "^2")]),
+        ] {
+            let pkg = dir.path().join(format!("{id}-{version}"));
+            init_package(
+                &pkg,
+                &InitOptions {
+                    id: id.into(),
+                    name: id.into(),
+                    version: version.into(),
+                    force: false,
+                },
+            )
+            .unwrap();
+            fs::write(pkg.join("files/payload.txt"), version).unwrap();
+            if !deps.is_empty() {
+                let mut manifest = load_manifest(&pkg.join("package.toml")).unwrap();
+                for (dep_id, dep_ver) in deps {
+                    manifest.dependencies.insert(dep_id.into(), dep_ver.into());
+                }
+                fs::write(
+                    pkg.join("package.toml"),
+                    toml::to_string_pretty(&manifest).unwrap(),
+                )
+                .unwrap();
+            }
+            let archive = repo.join(format!("packages/{id}-{version}.lar"));
+            pack(&pkg, &archive).unwrap();
+        }
+        let index = build_index(&repo, &secret).unwrap();
+        write_index(&repo, &index).unwrap();
+        add_source(&store, "main".into(), repo.display().to_string()).unwrap();
+
+        let manifest = write_root(
+            dir.path(),
+            "org.example.app",
+            "0.1.0",
+            &[("org.example.a", "^1"), ("org.example.b", "1.0.0")],
+        );
+
+        let lock = resolve(&manifest, &store).unwrap();
+        let a = lock
+            .packages
+            .iter()
+            .find(|p| p.id == "org.example.a")
+            .unwrap();
+        assert_eq!(a.version, "1.0.0");
+
+        // Rejected A 1.1 / C 2.0 were peeked but must not remain in the store.
+        assert!(store.get("org.example.a", "1.1.0").unwrap().is_none());
+        assert!(store.get("org.example.c", "2.0.0").unwrap().is_none());
+        assert!(store.get("org.example.a", "1.0.0").unwrap().is_some());
     }
 
     #[test]

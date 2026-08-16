@@ -1,7 +1,9 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::io;
 use std::path::Path;
 
 use lar_package::{load_manifest, resolve_manifest_path, PackageManifest};
+use lar_repo::ResolvePackage;
 use lar_store::Store;
 use semver::{Version, VersionReq};
 
@@ -18,18 +20,21 @@ pub fn resolve(manifest_path: &Path, store: &Store) -> Result<Lockfile> {
 
 /// Resolve from an already-loaded root manifest.
 ///
-/// Picks the highest matching version for each package id, and backtracks to
-/// older candidates when a later requirement makes the choice unsatisfiable.
-/// Still enforces one version per id.
+/// Searches with highest-matching versions first and backtracks on conflict.
+/// Candidate packages are inspected without adding failed tries to the store;
+/// only the winning set is materialized.
 pub fn resolve_manifest(root: &PackageManifest, store: &Store) -> Result<Lockfile> {
     let mut ctx = ResolveCtx {
         store,
         resolved: BTreeMap::new(),
         packages: BTreeMap::new(),
         visiting: BTreeSet::new(),
+        trail: Vec::new(),
+        cache: HashMap::new(),
     };
 
     ctx.solve_root(root)?;
+    ctx.materialize()?;
 
     let mut locked_packages: Vec<LockedPackage> = ctx.packages.into_values().collect();
     locked_packages.sort_by(|a, b| (&a.id, &a.version).cmp(&(&b.id, &b.version)));
@@ -46,34 +51,43 @@ pub fn resolve_manifest(root: &PackageManifest, store: &Store) -> Result<Lockfil
     Ok(lock)
 }
 
-struct ResolveCtx<'a> {
-    store: &'a Store,
-    /// id -> exact version chosen for the graph
-    resolved: BTreeMap<String, String>,
-    packages: BTreeMap<(String, String), LockedPackage>,
-    visiting: BTreeSet<(String, String)>,
+struct Frame {
+    id: String,
+    version: String,
 }
 
-#[derive(Clone)]
-struct Checkpoint {
+struct ResolveCtx<'a> {
+    store: &'a Store,
     resolved: BTreeMap<String, String>,
     packages: BTreeMap<(String, String), LockedPackage>,
     visiting: BTreeSet<(String, String)>,
+    /// Assignment order for O(depth) undo instead of cloning maps.
+    trail: Vec<Frame>,
+    cache: HashMap<(String, String), ResolvePackage>,
 }
 
 impl<'a> ResolveCtx<'a> {
-    fn checkpoint(&self) -> Checkpoint {
-        Checkpoint {
-            resolved: self.resolved.clone(),
-            packages: self.packages.clone(),
-            visiting: self.visiting.clone(),
+    fn trail_len(&self) -> usize {
+        self.trail.len()
+    }
+
+    fn undo_to(&mut self, len: usize) {
+        while self.trail.len() > len {
+            let frame = self.trail.pop().expect("trail non-empty");
+            self.resolved.remove(&frame.id);
+            self.packages
+                .remove(&(frame.id.clone(), frame.version.clone()));
+            self.visiting
+                .remove(&(frame.id.clone(), frame.version.clone()));
         }
     }
 
-    fn restore(&mut self, cp: Checkpoint) {
-        self.resolved = cp.resolved;
-        self.packages = cp.packages;
-        self.visiting = cp.visiting;
+    fn push_assignment(&mut self, id: &str, version: &str) {
+        self.resolved.insert(id.to_string(), version.to_string());
+        self.trail.push(Frame {
+            id: id.to_string(),
+            version: version.to_string(),
+        });
     }
 
     fn solve_root(&mut self, root: &PackageManifest) -> Result<()> {
@@ -84,8 +98,7 @@ impl<'a> ResolveCtx<'a> {
         if !self.visiting.insert(key.clone()) {
             return Err(Error::Cycle { id, version });
         }
-
-        self.resolved.insert(id.clone(), version.clone());
+        self.push_assignment(&id, &version);
 
         let deps: Vec<(String, String)> = root
             .dependencies
@@ -107,7 +120,6 @@ impl<'a> ResolveCtx<'a> {
         Ok(())
     }
 
-    /// Satisfy `deps` left-to-right. Failures in later deps backtrack into earlier choices.
     fn select_deps(&mut self, deps: &[(String, String)]) -> Result<()> {
         if deps.is_empty() {
             return Ok(());
@@ -153,26 +165,23 @@ impl<'a> ResolveCtx<'a> {
             });
         }
 
-        let mut last_err = None;
+        let mark = self.trail_len();
+        let mut failures: Vec<(String, Error)> = Vec::new();
         for version in &candidates {
-            let cp = self.checkpoint();
             match self.expand(id, version, rest) {
                 Ok(()) => return Ok(()),
-                Err(err) if is_search_failure(&err) => {
-                    self.restore(cp);
-                    last_err = Some(err);
+                Err(err) if is_candidate_failure(&err) => {
+                    self.undo_to(mark);
+                    failures.push((version.clone(), err));
                 }
                 Err(err) => {
-                    self.restore(cp);
+                    self.undo_to(mark);
                     return Err(err);
                 }
             }
         }
 
-        Err(last_err.unwrap_or_else(|| Error::Unsatisfiable {
-            id: id.to_string(),
-            req: req_str.to_string(),
-        }))
+        Err(summarize_failures(id, req_str, failures))
     }
 
     fn expand(&mut self, id: &str, version: &str, rest: &[(String, String)]) -> Result<()> {
@@ -185,45 +194,16 @@ impl<'a> ResolveCtx<'a> {
             });
         }
 
-        let stored = match self.store.get(id, version)? {
-            Some(existing) => {
-                lar_repo::emit_store_hit_warnings(
-                    self.store,
-                    id,
-                    version,
-                    Some(&existing.content_hash),
-                    &mut std::io::stderr(),
-                )?;
-                existing
+        let pkg = match self.load_cached(id, version) {
+            Ok(pkg) => pkg.clone(),
+            Err(err) => {
+                self.visiting.remove(&key);
+                return Err(err);
             }
-            None => lar_repo::fetch_into_store(
-                self.store,
-                id,
-                version,
-                &mut std::io::stderr(),
-            )
-            .map_err(|err| match err {
-                lar_repo::Error::PackageNotFound { id, version } => Error::Missing { id, version },
-                other => other.into(),
-            })?,
         };
+        self.push_assignment(id, version);
 
-        let dep_manifest = load_manifest(&stored.path.join("package.toml"))?;
-        if dep_manifest.package.id != id || dep_manifest.package.version != version {
-            self.visiting.remove(&key);
-            return Err(Error::Other(format!(
-                "stored package at {} has id/version {} {}, expected {} {}",
-                stored.path.display(),
-                dep_manifest.package.id,
-                dep_manifest.package.version,
-                id,
-                version
-            )));
-        }
-
-        self.resolved.insert(id.to_string(), version.to_string());
-
-        let child_deps: Vec<(String, String)> = dep_manifest
+        let child_deps: Vec<(String, String)> = pkg
             .dependencies
             .iter()
             .map(|(k, v)| (k.clone(), v.clone()))
@@ -236,24 +216,116 @@ impl<'a> ResolveCtx<'a> {
             LockedPackage {
                 id: id.to_string(),
                 version: version.to_string(),
-                content_hash: Some(stored.content_hash),
-                dependencies: dep_manifest.dependencies,
+                content_hash: Some(pkg.content_hash),
+                dependencies: pkg.dependencies,
             },
         );
         self.visiting.remove(&key);
 
         self.select_deps(rest)
     }
+
+    fn load_cached(&mut self, id: &str, version: &str) -> Result<&ResolvePackage> {
+        let key = (id.to_string(), version.to_string());
+        if !self.cache.contains_key(&key) {
+            // Discard advisory noise while probing candidates; materialize warns.
+            let mut sink = io::sink();
+            let pkg = lar_repo::load_package_for_resolve(self.store, id, version, &mut sink)
+                .map_err(|err| match err {
+                    lar_repo::Error::PackageNotFound { id, version } => {
+                        Error::Missing { id, version }
+                    }
+                    other => other.into(),
+                })?;
+            self.cache.insert(key.clone(), pkg);
+        }
+        Ok(self.cache.get(&key).expect("cache insert"))
+    }
+
+    /// Fetch winning packages into the store (failed search candidates were never added).
+    fn materialize(&mut self) -> Result<()> {
+        let mut warn_out = io::stderr();
+        let pins: Vec<(String, String, Option<String>)> = self
+            .packages
+            .values()
+            .map(|p| (p.id.clone(), p.version.clone(), p.content_hash.clone()))
+            .collect();
+
+        for (id, version, expected_hash) in pins {
+            let Some(expected_hash) = expected_hash else {
+                continue;
+            };
+            let stored = if let Some(existing) = self.store.get(&id, &version)? {
+                lar_repo::emit_store_hit_warnings(
+                    self.store,
+                    &id,
+                    &version,
+                    Some(&existing.content_hash),
+                    &mut warn_out,
+                )?;
+                existing
+            } else {
+                lar_repo::fetch_into_store(self.store, &id, &version, &mut warn_out).map_err(
+                    |err| match err {
+                        lar_repo::Error::PackageNotFound { id, version } => {
+                            Error::Missing { id, version }
+                        }
+                        other => other.into(),
+                    },
+                )?
+            };
+            if stored.content_hash != expected_hash {
+                return Err(Error::HashMismatch {
+                    id,
+                    version,
+                    locked: expected_hash,
+                    store: stored.content_hash,
+                });
+            }
+        }
+        Ok(())
+    }
 }
 
-fn is_search_failure(err: &Error) -> bool {
-    matches!(
-        err,
+/// Failures that mean "try the next candidate," not abort the whole resolve.
+fn is_candidate_failure(err: &Error) -> bool {
+    match err {
         Error::Conflict { .. }
-            | Error::Unsatisfiable { .. }
-            | Error::Cycle { .. }
-            | Error::Missing { .. }
-    )
+        | Error::Unsatisfiable { .. }
+        | Error::Unresolvable(_)
+        | Error::Missing { .. } => true,
+        // Yanked / not found while probing a listed candidate → try another version.
+        Error::Repo(lar_repo::Error::PackageNotFound { .. })
+        | Error::Repo(lar_repo::Error::Yanked { .. }) => true,
+        // Cycles are structural for this path; do not burn other candidates hoping they help.
+        Error::Cycle { .. } => false,
+        _ => false,
+    }
+}
+
+fn summarize_failures(id: &str, req: &str, failures: Vec<(String, Error)>) -> Error {
+    if failures.is_empty() {
+        return Error::Unsatisfiable {
+            id: id.to_string(),
+            req: req.to_string(),
+        };
+    }
+    if failures.len() == 1 {
+        return failures.into_iter().next().unwrap().1;
+    }
+
+    let mut lines = vec![format!(
+        "could not resolve {id} requiring `{req}` (tried {}):",
+        failures
+            .iter()
+            .map(|(v, _)| v.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    )];
+    for (version, err) in &failures {
+        lines.push(format!("  - {version}: {err}"));
+    }
+    Error::Unresolvable(lines.join("\n"))
 }
 
 /// Matching versions of `id`, highest semver first.

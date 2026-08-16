@@ -10,9 +10,9 @@ use crate::Result;
 
 /// List candidate versions of `id` for dependency resolution.
 ///
-/// Includes every version present in the local store, plus versions published
-/// in configured package sources that are not marked yanked in that source's
-/// advisories.
+/// Collects every version present in the local store, plus non-yanked versions
+/// published in any configured source. Version selection (highest matching) and
+/// source selection (highest-priority source for a chosen pin) happen elsewhere.
 pub fn list_dep_versions(store: &Store, id: &str) -> Result<Vec<String>> {
     let mut versions = BTreeSet::new();
 

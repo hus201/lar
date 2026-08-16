@@ -14,9 +14,8 @@ use lar_manager::{
 use lar_package::{init_package, inspect, pack, validate_package, InitOptions};
 use lar_repo::{
     add_source, audit, audit_should_fail, build_index, default_source_name, init_repo, keygen,
-    load_sources, load_trust, publish_package, remove_source, set_fetch_priority,
-    sign_advisories_in_dir, trust_add, trust_remove, unpublish_package, validate_repo, write_index,
-    AuditScope, FetchPriority,
+    load_sources, load_trust, publish_package, remove_source, sign_advisories_in_dir, trust_add,
+    trust_remove, unpublish_package, validate_repo, write_index, AuditScope,
 };
 use lar_resolver::{lockfile_path_for_manifest, resolve, write_lockfile};
 use lar_runtime::{
@@ -412,16 +411,9 @@ fn run_repo(system: bool, command: RepoCmd) -> Result<(), String> {
         }
         RepoCmd::List => {
             let file = load_sources(&store).map_err(|e| e.to_string())?;
-            println!("fetch_priority {}", file.fetch_priority);
-            for src in &file.sources {
-                println!("{} {}", src.name, src.uri);
+            for (i, src) in file.sources.iter().enumerate() {
+                println!("{} {} {}", i + 1, src.name, src.uri);
             }
-            Ok(())
-        }
-        RepoCmd::Priority { value } => {
-            let priority: FetchPriority = value.parse().map_err(|e: lar_repo::Error| e.to_string())?;
-            let set = set_fetch_priority(&store, priority).map_err(|e| e.to_string())?;
-            println!("fetch_priority {set}");
             Ok(())
         }
         RepoCmd::Remove { source } => {

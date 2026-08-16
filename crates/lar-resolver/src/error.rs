@@ -20,6 +20,9 @@ pub enum Error {
         resolved: String,
     },
 
+    #[error("{0}")]
+    Unresolvable(String),
+
     #[error("dependency cycle detected involving {id} {version}")]
     Cycle { id: String, version: String },
 

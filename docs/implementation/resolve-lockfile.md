@@ -5,25 +5,25 @@
 ## Scope (v1)
 
 - Input: a local `package.toml` (or a directory containing it)
-- Dependency source: local store, then configured package sources (`fetch_priority` first-win or last-win) — [repos.md](repos.md)
+- Dependency source: local store, then configured package sources (source order = priority) — [repos.md](repos.md)
 - Versions in manifests: semver **requirements** (`1.2.3`, `^1.2`, `~1.2.3`, `>=1.0, <2`); bare `*` rejected
 - Lockfile: **exact** pins only
 - Root package: always included from the local manifest (exact version)
-- Selection: try highest matching semver first among store ∪ source-index candidates (non-yanked); backtrack to older candidates on conflict
+- Selection: collect matching candidates → highest compatible version → if the same pin is in multiple sources, highest-priority source; never merge contents; backtrack to older versions on conflict; peek during search, fetch winners only
 
 ## Algorithm
 
 1. Load and validate the root manifest.
-2. Walk `[dependencies]` transitively (each value is a version requirement).
-3. For each unresolved `(id, req)`:
-   - Same id already resolved and chosen version **matches** `req` → continue
-   - Same id already resolved and chosen version **does not match** `req` → conflict (triggers backtracking)
-   - Otherwise list candidates (`list_dep_versions`), filter by `req`, try **highest semver first**
-   - No candidate → unsatisfiable error
-   - For each candidate: ensure exact pin in store (hit + advisory warn, or fetch), load that package’s deps, then continue with remaining work
-   - On conflict / unsatisfiable / missing further down the search, undo that assignment and try the next-older candidate
-4. Cycles (re-entering a package still being expanded) are an error.
-5. Write `lar.lock` next to the root `package.toml`.
+2. Search the dependency graph (highest matching semver first; one version per id):
+   - Same id already chosen and matches → continue
+   - Same id already chosen and does not match → conflict (backtrack)
+   - Otherwise try candidates from `list_dep_versions` filtered by the requirement
+   - Load each candidate’s metadata via peek (store hit or download+inspect **without** `store.add`); cache in-memory
+   - On conflict / unsatisfiable / missing further down, undo assignments along a trail and try the next-older candidate
+   - Cycles abort that path immediately (not retried as a soft search failure)
+   - If several candidates fail, the error lists each tried version and why
+3. Materialize: `fetch_into_store` only for the winning pins (failed probes never enter the store).
+4. Write `lar.lock` next to the root `package.toml`.
 
 ## Lockfile format (`lar.lock`)
 

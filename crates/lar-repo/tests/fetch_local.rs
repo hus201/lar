@@ -57,17 +57,10 @@ fn local_fetch_requires_trust_and_signature() {
     let index = build_index(&repo, &secret).unwrap();
     write_index(&repo, &index).unwrap();
 
-    add_source(&store, "main".into(), repo.display().to_string())
-    .unwrap();
+    add_source(&store, "main".into(), repo.display().to_string()).unwrap();
 
     let mut warn = Cursor::new(Vec::new());
-    let stored = fetch_into_store(
-        &store,
-        "org.example.lib",
-        "1.0.0",
-        &mut warn,
-    )
-    .unwrap();
+    let stored = fetch_into_store(&store, "org.example.lib", "1.0.0", &mut warn).unwrap();
     assert_eq!(stored.id, "org.example.lib");
     assert_eq!(stored.version, "1.0.0");
 }
@@ -90,17 +83,10 @@ fn untrusted_key_refuses_fetch() {
     let index = build_index(&repo, &secret).unwrap();
     write_index(&repo, &index).unwrap();
 
-    add_source(&store, "main".into(), repo.display().to_string())
-    .unwrap();
+    add_source(&store, "main".into(), repo.display().to_string()).unwrap();
 
     let mut warn = Cursor::new(Vec::new());
-    let err = fetch_into_store(
-        &store,
-        "org.example.lib",
-        "1.0.0",
-        &mut warn,
-    )
-    .unwrap_err();
+    let err = fetch_into_store(&store, "org.example.lib", "1.0.0", &mut warn).unwrap_err();
     assert!(
         matches!(err, lar_repo::Error::UntrustedKey(ref id) if id == &key_id),
         "{err}"
@@ -130,17 +116,10 @@ fn bad_signature_refuses_fetch() {
     index.packages[0].signature = lar_repo::sign_content_hash(&secret_b, &content_hash).unwrap();
     write_index(&repo, &index).unwrap();
 
-    add_source(&store, "main".into(), repo.display().to_string())
-    .unwrap();
+    add_source(&store, "main".into(), repo.display().to_string()).unwrap();
 
     let mut warn = Cursor::new(Vec::new());
-    let err = fetch_into_store(
-        &store,
-        "org.example.lib",
-        "1.0.0",
-        &mut warn,
-    )
-    .unwrap_err();
+    let err = fetch_into_store(&store, "org.example.lib", "1.0.0", &mut warn).unwrap_err();
     assert!(
         matches!(
             err,
@@ -187,17 +166,10 @@ summary = "Yanked pin"
 "#,
     );
 
-    add_source(&store, "main".into(), repo.display().to_string())
-    .unwrap();
+    add_source(&store, "main".into(), repo.display().to_string()).unwrap();
 
     let mut warn = Cursor::new(Vec::new());
-    let err = fetch_into_store(
-        &store,
-        "org.example.lib",
-        "1.0.0",
-        &mut warn,
-    )
-    .unwrap_err();
+    let err = fetch_into_store(&store, "org.example.lib", "1.0.0", &mut warn).unwrap_err();
     assert!(err.to_string().contains("yanked"), "{err}");
 }
 
@@ -235,17 +207,10 @@ url = "https://example.test/LAR-2026-0002"
 "#,
     );
 
-    add_source(&store, "main".into(), repo.display().to_string())
-    .unwrap();
+    add_source(&store, "main".into(), repo.display().to_string()).unwrap();
 
     let mut warn = Cursor::new(Vec::new());
-    fetch_into_store(
-        &store,
-        "org.example.lib",
-        "1.0.0",
-        &mut warn,
-    )
-    .unwrap();
+    fetch_into_store(&store, "org.example.lib", "1.0.0", &mut warn).unwrap();
     let text = String::from_utf8(warn.into_inner()).unwrap();
     assert!(text.contains("LAR-2026-0002"), "{text}");
     assert!(text.contains("Known issue"), "{text}");
@@ -283,17 +248,10 @@ summary = "unsigned"
     )
     .unwrap();
 
-    add_source(&store, "main".into(), repo.display().to_string())
-    .unwrap();
+    add_source(&store, "main".into(), repo.display().to_string()).unwrap();
 
     let mut warn = Cursor::new(Vec::new());
-    let err = fetch_into_store(
-        &store,
-        "org.example.lib",
-        "1.0.0",
-        &mut warn,
-    )
-    .unwrap_err();
+    let err = fetch_into_store(&store, "org.example.lib", "1.0.0", &mut warn).unwrap_err();
     assert!(
         err.to_string().contains("key_id")
             || err.to_string().contains("signature")
@@ -337,8 +295,7 @@ summary = "High severity"
     let index = build_index(&repo, &secret).unwrap();
     write_index(&repo, &index).unwrap();
 
-    add_source(&store, "vendor".into(), repo.display().to_string())
-    .unwrap();
+    add_source(&store, "vendor".into(), repo.display().to_string()).unwrap();
 
     let mut out = Vec::new();
     let findings = audit(&store, AuditScope::Store, &mut out).unwrap();
@@ -377,13 +334,7 @@ fn http_fetch_works() {
     add_source(&store, "http".into(), uri).unwrap();
 
     let mut warn = Cursor::new(Vec::new());
-    let stored = fetch_into_store(
-        &store,
-        "org.example.lib",
-        "1.0.0",
-        &mut warn,
-    )
-    .unwrap();
+    let stored = fetch_into_store(&store, "org.example.lib", "1.0.0", &mut warn).unwrap();
     assert_eq!(stored.version, "1.0.0");
 }
 
@@ -423,8 +374,7 @@ summary = "yanked"
 "#,
     );
 
-    add_source(&store, "main".into(), repo.display().to_string())
-    .unwrap();
+    add_source(&store, "main".into(), repo.display().to_string()).unwrap();
 
     let versions = list_dep_versions(&store, "org.example.lib").unwrap();
     assert!(versions.contains(&"1.1.0".to_string()), "{versions:?}");
@@ -435,9 +385,7 @@ summary = "yanked"
 }
 
 #[test]
-fn fetch_priority_first_win_vs_last_win() {
-    use lar_repo::{set_fetch_priority, FetchPriority};
-
+fn highest_priority_source_wins_for_same_pin() {
     let tmp = tempdir().unwrap();
     let prefix = tmp.path().join("prefix");
     let store = open_prefix(&prefix);
@@ -446,16 +394,12 @@ fn fetch_priority_first_win_vs_last_win() {
     trust_add(&store, &public, "test").unwrap();
 
     let mut hashes = Vec::new();
-    for (name, body) in [("a", &b"from-a"[..]), ("b", &b"from-b"[..])] {
+    for (name, body) in [("high", &b"from-high"[..]), ("low", &b"from-low"[..])] {
         let pkg_dir = tmp.path().join(format!("pkg-{name}"));
         let lar_path = pack_lib(&pkg_dir, "org.example.lib", "1.0.0", body);
         let repo = tmp.path().join(format!("repo-{name}"));
         fs::create_dir_all(repo.join("packages")).unwrap();
-        fs::copy(
-            &lar_path,
-            repo.join("packages/org.example.lib-1.0.0.lar"),
-        )
-        .unwrap();
+        fs::copy(&lar_path, repo.join("packages/org.example.lib-1.0.0.lar")).unwrap();
         let index = build_index(&repo, &secret).unwrap();
         write_index(&repo, &index).unwrap();
         hashes.push(index.packages[0].content_hash.clone());
@@ -463,19 +407,12 @@ fn fetch_priority_first_win_vs_last_win() {
     }
     assert_ne!(hashes[0], hashes[1]);
 
-    set_fetch_priority(&store, FetchPriority::FirstWin).unwrap();
     let mut warn = Cursor::new(Vec::new());
-    let first = fetch_into_store(&store, "org.example.lib", "1.0.0", &mut warn).unwrap();
-    assert_eq!(first.content_hash, hashes[0], "first-win should take source a");
-
-    // Remove so we can fetch again from sources
-    store
-        .remove("org.example.lib", "1.0.0", false)
-        .unwrap();
-
-    set_fetch_priority(&store, FetchPriority::LastWin).unwrap();
-    let last = fetch_into_store(&store, "org.example.lib", "1.0.0", &mut warn).unwrap();
-    assert_eq!(last.content_hash, hashes[1], "last-win should take source b");
+    let fetched = fetch_into_store(&store, "org.example.lib", "1.0.0", &mut warn).unwrap();
+    assert_eq!(
+        fetched.content_hash, hashes[0],
+        "earlier source in sources.toml is higher priority"
+    );
 }
 
 fn serve_file(root: &Path, mut stream: std::net::TcpStream) -> std::io::Result<()> {

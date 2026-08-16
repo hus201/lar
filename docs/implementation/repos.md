@@ -27,19 +27,26 @@ Published source layout (local path or HTTP(S) base):
 
 ```toml
 format = 1
-fetch_priority = "first-win"    # or "last-win"
 
 [[sources]]
 name = "upstream"
 uri = "/path/to/repo"           # or file://, http://, https://
+
+[[sources]]
+name = "overlay"
+uri = "/path/to/overlay"
 ```
 
-Fetch priority when multiple sources publish the same exact pin:
+Source **order is priority** (earlier = higher). When resolving or fetching a pin:
 
-- `first-win` (default) — first source in config order that has the pin
-- `last-win` — last source in config order that has the pin
+1. Collect candidates that satisfy the version requirement
+2. Select the highest compatible version
+3. If the same `(id, version)` exists in multiple sources, take it from the highest-priority source
+4. Never merge package contents from different sources
 
 Local store always wins if the pin is already present. Whether a package is installable as an app is determined by its manifest (`[entry]`), not by the source.
+
+Legacy `fetch_priority` keys in older `sources.toml` files are ignored.
 
 ## Signatures and trust
 
@@ -101,9 +108,7 @@ lar repo trust add <pubkey-or-file> [--comment TEXT]
 lar repo trust list
 lar repo trust remove <key_id>
 lar repo add [--name NAME] <path-or-url>
-lar repo priority <first-win|last-win>
-lar repo list
-lar repo list
+lar repo list                 # priority order (1 = highest)
 lar repo remove <name-or-uri>
 lar audit [--installed|--store]   # default: installed apps' pins
 ```

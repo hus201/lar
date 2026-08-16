@@ -27,24 +27,24 @@ Sources are decentralized. Examples:
 - Enterprise sources
 - Local/offline mirrors
 
-### Fetch priority
+### Source priority
 
-Configurable in `sources.toml` / `lar repo priority`:
+Configured sources are ordered: **earlier entries in `sources.toml` are higher priority**.
 
-| Value | Behavior |
-|-------|----------|
-| `first-win` (default) | First matching source in configuration order wins |
-| `last-win` | Last matching source in configuration order wins |
+When resolving or fetching:
 
-Always: local SxS store wins if the exact `(id, version)` is already present (no fetch).
+1. Collect candidate versions that satisfy the requirement (store ∪ sources, non-yanked).
+2. Select the **highest compatible** semver version.
+3. If that exact `(id, version)` exists in multiple sources, take it from the **highest-priority** source.
+4. **Never merge** package contents from different sources — one source supplies the whole pin.
+
+Local SxS store wins if the exact `(id, version)` is already present (no fetch).
 
 ```bash
-lar repo priority first-win
-lar repo priority last-win
-lar repo list   # prints fetch_priority …
+lar repo list   # prints sources in priority order (1 = highest)
 ```
 
-Do not merge sources. Exact pins and the local store remain the source of truth after fetch.
+Edit `sources.toml` (or remove/re-add) to change priority. Exact pins and the local store remain the source of truth after fetch.
 
 ## SxS Package Store
 

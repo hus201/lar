@@ -228,12 +228,6 @@ pub enum RepoCmd {
     },
     /// List configured package sources
     List,
-    /// Set fetch priority when multiple sources publish the same pin
-    Priority {
-        /// `first-win` (default) or `last-win`
-        #[arg(value_parser = ["first-win", "last-win", "first", "last"])]
-        value: String,
-    },
     /// Remove a configured package source
     Remove {
         /// Source name or URI

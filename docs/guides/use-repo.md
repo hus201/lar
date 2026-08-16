@@ -23,14 +23,12 @@ lar repo add /path/to/my-repo
 # Explicit name:
 lar repo add --name vendor https://example.com/lar-vendor/
 
-# When the same pin exists in multiple sources:
-lar repo priority first-win   # default: earlier source wins
-lar repo priority last-win    # later source wins (e.g. overlay)
-
+# Sources are listed in priority order (earlier = higher). Prefer an overlay by
+# listing it first in sources.toml (or add it before other sources).
 lar repo list
 ```
 
-Fetch priority is **first-win** or **last-win** among configured sources (local store always wins if the pin is already present). The same sources feed `lar resolve` and `lar install <id>`; installable apps are those with `[entry]` in their manifest.
+For each dependency, LAR collects matching versions, picks the **highest compatible** version, and if that exact pin exists in several sources, takes it from the **highest-priority** source. Package contents are never merged across sources. The local store wins if the pin is already present. The same sources feed `lar resolve` and `lar install <id>`; installable apps are those with `[entry]` in their manifest.
 
 ## 3. Resolve, install, audit
 
