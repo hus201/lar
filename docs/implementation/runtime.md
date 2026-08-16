@@ -7,7 +7,7 @@
 - Input: path to `lar.lock` or a directory containing it
 - All locked packages (including root) must be in the store with matching `content_hash`
 - Configurable compose mode (default **symlink**); same relative path from two packages → error
-- No package-source fetch or sandbox
+- Runtime compose does not fetch from package sources (caller supplies a ready store + lockfile)
 
 ## Compose modes
 

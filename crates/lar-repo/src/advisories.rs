@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::trust::{
-    find_trusted_key, key_id_from_public, sign_message, verify_message, TrustFile,
+    find_trusted_key, key_id_from_public, sign_content_hash, verify_content_hash, TrustFile,
 };
 use crate::Error;
 use crate::Result;
@@ -13,13 +13,17 @@ pub const ADVISORIES_FORMAT: u32 = 1;
 
 /// Repo-published vulnerability metadata (`advisories.toml`).
 ///
-/// When the file is present on a source, `key_id` and `signature` are required and
-/// verified against the trust store (Ed25519 over the canonical advisory payload).
+/// When the file is present on a source, `content_hash`, `key_id`, and `signature`
+/// are required. Signature is Ed25519 over the UTF-8 `content_hash` string (same
+/// shape as package index entries). `content_hash` is BLAKE3 over the canonical
+/// `format` + `[[advisories]]` payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct AdvisoriesFile {
     #[serde(default = "default_format")]
     pub format: u32,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub content_hash: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub key_id: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -74,9 +78,9 @@ impl Severity {
     }
 }
 
-/// Payload covered by `signature` (format + advisories only).
+/// Payload covered by `content_hash` (format + advisories only).
 #[derive(Debug, Serialize)]
-struct AdvisoriesSignPayload<'a> {
+struct AdvisoriesHashPayload<'a> {
     format: u32,
     advisories: &'a [Advisory],
 }
@@ -105,12 +109,18 @@ impl AdvisoriesFile {
         Ok(())
     }
 
-    /// Present published files must carry signature fields.
+    /// Present published files must carry hash + signature fields.
     pub fn require_signature_fields(&self) -> Result<()> {
-        if self.key_id.is_empty() || self.signature.is_empty() {
+        if self.content_hash.is_empty() || self.key_id.is_empty() || self.signature.is_empty() {
             return Err(Error::InvalidAdvisories(
-                "advisories.toml requires key_id and signature (run `lar repo index --sign-key`)"
+                "advisories.toml requires content_hash, key_id, and signature (run `lar repo index --sign-key`)"
                     .into(),
+            ));
+        }
+        if !self.content_hash.starts_with("blake3:") || self.content_hash.len() <= "blake3:".len()
+        {
+            return Err(Error::InvalidAdvisories(
+                "advisories content_hash must look like blake3:<hex>".into(),
             ));
         }
         Ok(())
@@ -118,7 +128,10 @@ impl AdvisoriesFile {
 
     /// True for the in-memory placeholder when `advisories.toml` is absent.
     pub fn is_absent_placeholder(&self) -> bool {
-        self.key_id.is_empty() && self.signature.is_empty() && self.advisories.is_empty()
+        self.content_hash.is_empty()
+            && self.key_id.is_empty()
+            && self.signature.is_empty()
+            && self.advisories.is_empty()
     }
 
     pub fn matches(
@@ -161,21 +174,23 @@ pub fn parse_advisories(text: &str) -> Result<AdvisoriesFile> {
 pub fn empty_advisories() -> AdvisoriesFile {
     AdvisoriesFile {
         format: ADVISORIES_FORMAT,
+        content_hash: String::new(),
         key_id: String::new(),
         signature: String::new(),
         advisories: Vec::new(),
     }
 }
 
-/// Canonical bytes covered by the advisories Ed25519 signature.
-pub fn advisories_signing_message(file: &AdvisoriesFile) -> Result<Vec<u8>> {
-    let payload = AdvisoriesSignPayload {
+/// BLAKE3 `content_hash` over the canonical advisories payload (`format` + entries).
+pub fn compute_advisories_content_hash(file: &AdvisoriesFile) -> Result<String> {
+    let payload = AdvisoriesHashPayload {
         format: file.format,
         advisories: &file.advisories,
     };
     let text = toml::to_string(&payload)
         .map_err(|err| Error::Other(format!("serialize advisories payload: {err}")))?;
-    Ok(text.into_bytes())
+    let digest = blake3::hash(text.as_bytes());
+    Ok(format!("blake3:{}", digest.to_hex()))
 }
 
 /// Sign advisories with a secret key (same form as package index signing).
@@ -204,9 +219,9 @@ pub fn sign_advisories(mut file: AdvisoriesFile, secret_key: &str) -> Result<Adv
             )
         )
     };
+    file.content_hash = compute_advisories_content_hash(&file)?;
     file.key_id = key_id_from_public(&public)?;
-    let message = advisories_signing_message(&file)?;
-    file.signature = sign_message(secret_key, &message)?;
+    file.signature = sign_content_hash(secret_key, &file.content_hash)?;
     file.require_signature_fields()?;
     Ok(file)
 }
@@ -217,10 +232,16 @@ pub fn verify_advisories(file: &AdvisoriesFile, trust: &TrustFile) -> Result<()>
         return Ok(());
     }
     file.require_signature_fields()?;
+    let expected = compute_advisories_content_hash(file)?;
+    if expected != file.content_hash {
+        return Err(Error::InvalidAdvisories(format!(
+            "advisories content_hash mismatch (file has {}, recomputed {})",
+            file.content_hash, expected
+        )));
+    }
     let key = find_trusted_key(trust, &file.key_id)
         .ok_or_else(|| Error::UntrustedKey(file.key_id.clone()))?;
-    let message = advisories_signing_message(file)?;
-    verify_message(&key.public_key, &message, &file.signature).map_err(|_| {
+    verify_content_hash(&key.public_key, &file.content_hash, &file.signature).map_err(|_| {
         Error::BadAdvisoriesSignature {
             key_id: file.key_id.clone(),
         }

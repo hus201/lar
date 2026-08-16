@@ -29,7 +29,7 @@ LAR provides package integrity through:
 - Metadata verification.
 - Repo-published vulnerability advisories (Ed25519-signed; warnings; refuse yank on new fetch).
 
-LAR does not define a mandatory security isolation model.
+LAR does not define a mandatory security isolation model and does not aim to become a sandboxing platform. Integrity and provenance are in scope; confinement is left to the OS and the application.
 
 Application security continues using Linux mechanisms:
 

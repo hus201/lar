@@ -47,7 +47,8 @@ Fetch priority for missing dependencies:
 
 - Algorithm: Ed25519
 - Signed message: UTF-8 bytes of `content_hash` (e.g. `blake3:<hex>`)
-- Signature fields live on each `index.toml` package entry (`key_id`, `signature`)
+- Package signatures: each `index.toml` entry (`content_hash`, `key_id`, `signature`)
+- Advisory signatures: top-level `advisories.toml` fields (`content_hash`, `key_id`, `signature`)
 - Trust store: `{prefix}/config/trust.toml`
 
 ```toml
@@ -63,10 +64,11 @@ Repo fetch requires a trusted `key_id` and a valid signature, then verifies the 
 
 ## Advisories
 
-Optional `advisories.toml`. Absent → empty (no warning). Present → must include `key_id` and `signature` (Ed25519 over the canonical `format` + `[[advisories]]` payload), verified against the same trust store as package signatures. `lar repo index --sign-key` signs the file when present.
+Optional `advisories.toml`. Absent → empty (no warning). Present → must include `content_hash`, `key_id`, and `signature`: BLAKE3 over the canonical `format` + `[[advisories]]` payload, then Ed25519 over the UTF-8 `content_hash` string (same shape as package index entries), verified against the trust store. `lar repo index --sign-key` signs the file when present.
 
 ```toml
 format = 1
+content_hash = "blake3:…"
 key_id = "ed25519:…"
 signature = "base64:…"
 
@@ -86,7 +88,7 @@ url = "https://…"
 | Fetch hits `yanked = true` | **Refuse** (error) |
 | Fetch/resolve/install hits non-yanked advisory | **Warn** on stderr; continue |
 | Package already in store and yanked | **Warn**; do not delete |
-| Present file missing/invalid signature or untrusted key | **Refuse** |
+| Present file missing/invalid hash or signature, or untrusted key | **Refuse** |
 | `lar audit` | Report; exit non-zero if any high/critical or yanked-in-use |
 
 LAR does not invent CVEs. No advisory from configured sources → no warning for that pin.

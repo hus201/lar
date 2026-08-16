@@ -9,6 +9,7 @@ rust-version.workspace = true
 
 [dependencies]
 base64.workspace = true
+blake3.workspace = true
 ed25519-dalek.workspace = true
 lar-package.workspace = true
 lar-store.workspace = true
