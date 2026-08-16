@@ -1,6 +1,6 @@
 # LAR (Linux Application Runtime)
 
-**Version:** `0.9.0`
+**Version:** `0.10.0`
 
 LAR is a Linux application runtime that decouples application lifecycle from the operating system. Packages are immutable and stored side-by-side; each application gets a resolved runtime instead of depending on `/usr/lib`.
 
@@ -37,7 +37,7 @@ cargo run -p lar -- config
 
 Installed apps normally start from PATH exports or desktop menus after `install`. `resolve` / `runtime build` / `run` are for lockfile and package-author workflows.
 
-Docs: [guides](docs/guides/) (package / publish / consume / install), [proposal](docs/proposal.md), [design](docs/design/), [implementation](docs/implementation/), [release 0.9.0](docs/releases/0.9.0.md).
+Docs: [guides](docs/guides/) (package / publish / consume / install), [proposal](docs/proposal.md), [design](docs/design/), [implementation](docs/implementation/), [release 0.10.0](docs/releases/0.10.0.md).
 
 ## Build
 

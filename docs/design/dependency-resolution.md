@@ -1,6 +1,6 @@
 # Dependency Resolution
 
-**Status:** Partial — exact pins, semver **requirements** in manifests, `lar.lock`, and fetch from package sources are implemented; a full backtracking solver is not — [resolve-lockfile.md](../implementation/resolve-lockfile.md), [repos.md](../implementation/repos.md)
+**Status:** Implemented — [resolve-lockfile.md](../implementation/resolve-lockfile.md), [repos.md](../implementation/repos.md)
 
 Dependency resolution is based on application requirements.
 
@@ -21,9 +21,10 @@ Today `lar resolve`:
 
 - Loads a local `package.toml`
 - Treats `[dependencies]` values as **semver requirements** (exact, `^`, `~`, comparisons); rejects bare `*`
-- For each dependency id, selects the **highest matching** version among the local store and configured package sources (yanked index pins excluded)
+- For each dependency id, tries candidates from highest matching semver downward among the local store and configured package sources (yanked index pins excluded)
 - Fetches the chosen exact pin if missing (`fetch_priority`: first-win or last-win among sources)
-- One version per id: a later requirement that does not match the already-chosen version is a **conflict** (no backtracking)
+- One version per id; when a later requirement conflicts with an earlier choice, the solver **backtracks** and tries older candidates
+- Hard conflicts remain when no single version satisfies all requirements
 - Verifies signatures/hashes and emits advisory warnings (refuses yanked on new fetch)
 - Writes `lar.lock` with **exact** pins only
 

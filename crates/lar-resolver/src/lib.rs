@@ -368,6 +368,59 @@ mod tests {
     }
 
     #[test]
+    fn backtracking_retries_older_version() {
+        // Highest A (1.1) pulls C^2; B needs C^1. Solver should fall back to A 1.0.
+        let dir = tempdir().unwrap();
+        let store = Store::open(Paths::from_prefix(dir.path().join("prefix"), false));
+        add_pkg(&store, dir.path(), "org.example.c", "1.0.0", &[]);
+        add_pkg(&store, dir.path(), "org.example.c", "2.0.0", &[]);
+        add_pkg(
+            &store,
+            dir.path(),
+            "org.example.a",
+            "1.0.0",
+            &[("org.example.c", "^1")],
+        );
+        add_pkg(
+            &store,
+            dir.path(),
+            "org.example.a",
+            "1.1.0",
+            &[("org.example.c", "^2")],
+        );
+        add_pkg(
+            &store,
+            dir.path(),
+            "org.example.b",
+            "1.0.0",
+            &[("org.example.c", "^1")],
+        );
+        let manifest = write_root(
+            dir.path(),
+            "org.example.app",
+            "0.1.0",
+            &[
+                ("org.example.a", "^1"),
+                ("org.example.b", "1.0.0"),
+            ],
+        );
+
+        let lock = resolve(&manifest, &store).unwrap();
+        let a = lock
+            .packages
+            .iter()
+            .find(|p| p.id == "org.example.a")
+            .unwrap();
+        let c = lock
+            .packages
+            .iter()
+            .find(|p| p.id == "org.example.c")
+            .unwrap();
+        assert_eq!(a.version, "1.0.0");
+        assert_eq!(c.version, "1.0.0");
+    }
+
+    #[test]
     fn range_fetches_highest_from_deps_source() {
         use lar_repo::{add_source, build_index, keygen, trust_add, write_index};
 

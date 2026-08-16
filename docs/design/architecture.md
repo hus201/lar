@@ -1,6 +1,6 @@
 # Architecture Overview
 
-**Status:** Partial — SxS store, resolver (lockfile + version ranges), runtime, install records (including update/rollback), package sources (fetch/signatures/advisories), and desktop/PATH launch (`.desktop` + exports) are implemented.
+**Status:** Partial — SxS store, resolver (lockfile + version ranges + backtracking), runtime, install records (including update/rollback), package sources (fetch/signatures/advisories), and desktop/PATH launch (`.desktop` + exports) are implemented.
 
 LAR consists of four major components.
 
@@ -63,7 +63,7 @@ The SxS Store is the source of truth for packages present on the machine.
 
 ## Runtime Resolver
 
-**Status:** Partial — resolve/lockfile (including fetch and version ranges), runtime compose and launch environment, install records, and desktop/PATH launch are implemented — [resolve-lockfile.md](../implementation/resolve-lockfile.md), [runtime.md](../implementation/runtime.md), [install.md](../implementation/install.md), [desktop.md](../implementation/desktop.md), [repos.md](../implementation/repos.md)
+**Status:** Partial — resolve/lockfile (including fetch, version ranges, and backtracking), runtime compose and launch environment, install records, and desktop/PATH launch are implemented — [resolve-lockfile.md](../implementation/resolve-lockfile.md), [runtime.md](../implementation/runtime.md), [install.md](../implementation/install.md), [desktop.md](../implementation/desktop.md), [repos.md](../implementation/repos.md)
 
 Responsible for creating application execution environments.
 

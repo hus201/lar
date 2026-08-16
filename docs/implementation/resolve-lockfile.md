@@ -9,20 +9,20 @@
 - Versions in manifests: semver **requirements** (`1.2.3`, `^1.2`, `~1.2.3`, `>=1.0, <2`); bare `*` rejected
 - Lockfile: **exact** pins only
 - Root package: always included from the local manifest (exact version)
-- Selection: highest matching semver among store ∪ source-index candidates (non-yanked)
+- Selection: try highest matching semver first among store ∪ source-index candidates (non-yanked); backtrack to older candidates on conflict
 
 ## Algorithm
 
 1. Load and validate the root manifest.
 2. Walk `[dependencies]` transitively (each value is a version requirement).
-3. For each `(id, req)`:
-   - Same id already resolved and chosen version **matches** `req` → skip
-   - Same id already resolved and chosen version **does not match** `req` → conflict error
-   - Otherwise list candidates (`list_dep_versions`), filter by `req`, pick max semver
+3. For each unresolved `(id, req)`:
+   - Same id already resolved and chosen version **matches** `req` → continue
+   - Same id already resolved and chosen version **does not match** `req` → conflict (triggers backtracking)
+   - Otherwise list candidates (`list_dep_versions`), filter by `req`, try **highest semver first**
    - No candidate → unsatisfiable error
-   - Ensure exact pin in store (hit + advisory warn, or fetch)
-   - Load that package’s `package.toml` and enqueue its deps
-4. Cycles are an error.
+   - For each candidate: ensure exact pin in store (hit + advisory warn, or fetch), load that package’s deps, then continue with remaining work
+   - On conflict / unsatisfiable / missing further down the search, undo that assignment and try the next-older candidate
+4. Cycles (re-entering a package still being expanded) are an error.
 5. Write `lar.lock` next to the root `package.toml`.
 
 ## Lockfile format (`lar.lock`)

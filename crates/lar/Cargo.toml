@@ -39,7 +39,7 @@ assets = [
     ["../../packaging/staging/bin/lar", "usr/bin/", "755"],
     ["../../packaging/staging/bin/lar-exec", "usr/bin/", "755"],
     ["../../README.md", "usr/share/doc/lar/README.md", "644"],
-    ["../../docs/releases/0.9.0.md", "usr/share/doc/lar/RELEASE-0.9.0.md", "644"],
+    ["../../docs/releases/0.10.0.md", "usr/share/doc/lar/RELEASE-0.10.0.md", "644"],
     ["../../LICENSE", "usr/share/doc/lar/LICENSE", "644"],
 ]
 
@@ -51,6 +51,6 @@ assets = [
     { source = "../../packaging/staging/bin/lar", dest = "/usr/bin/lar", mode = "755" },
     { source = "../../packaging/staging/bin/lar-exec", dest = "/usr/bin/lar-exec", mode = "755" },
     { source = "../../README.md", dest = "/usr/share/doc/lar/README.md", mode = "644", doc = true },
-    { source = "../../docs/releases/0.9.0.md", dest = "/usr/share/doc/lar/RELEASE-0.9.0.md", mode = "644", doc = true },
+    { source = "../../docs/releases/0.10.0.md", dest = "/usr/share/doc/lar/RELEASE-0.10.0.md", mode = "644", doc = true },
     { source = "../../LICENSE", dest = "/usr/share/doc/lar/LICENSE", mode = "644", doc = true },
 ]
