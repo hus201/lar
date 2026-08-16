@@ -1,6 +1,6 @@
 # LAR Desktop Launch and PATH Exports
 
-Implemented in `lar-manager` (`desktop`, `exports`, `trampoline`) and the slim `lar-exec` binary. When an installed application has `[entry]`, LAR publishes a freedesktop `.desktop` file and PATH command links so menus and shells start the entry ELF through a native trampoline (no shell script; not the `lar` CLI).
+Implemented in `lar-manager` (`desktop`, `exports`) and the slim `lar-exec` binary (`lar-trampoline`). When an installed application has `[entry]`, LAR publishes a freedesktop `.desktop` file and PATH command links so menus and shells start the entry ELF through a native trampoline (no shell script; not the `lar` CLI).
 
 ## Scope (v1)
 

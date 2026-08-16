@@ -9,5 +9,5 @@ These documents describe shipped (or actively implemented) formats and subsystem
 | [resolve-lockfile.md](resolve-lockfile.md) | `lar resolve` and `lar.lock` |
 | [runtime.md](runtime.md) | Runtime compose, launch environment, list/inspect/gc |
 | [install.md](install.md) | Install records via `lar-manager` (`lar install` / `list` / `update` / `rollback` / `uninstall`) |
-| [desktop.md](desktop.md) | Freedesktop `.desktop` publish, PATH exports, trampoline |
+| [desktop.md](desktop.md) | Freedesktop `.desktop` publish, PATH exports, `lar-exec` trampoline |
 | [repos.md](repos.md) | Package sources, signatures, advisories, `lar audit` |

@@ -745,6 +745,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "lar-exec"
+version = "0.1.0"
+dependencies = [
+ "lar-trampoline",
+]
+
+[[package]]
 name = "lar-manager"
 version = "0.1.0"
 dependencies = [
@@ -753,6 +760,7 @@ dependencies = [
  "lar-resolver",
  "lar-runtime",
  "lar-store",
+ "lar-trampoline",
  "semver",
  "serde",
  "tempfile",
@@ -815,6 +823,7 @@ dependencies = [
  "lar-package",
  "lar-resolver",
  "lar-store",
+ "lar-trampoline",
  "serde",
  "tempfile",
  "thiserror",
@@ -828,6 +837,15 @@ dependencies = [
  "lar-package",
  "serde",
  "tempfile",
+ "thiserror",
+ "toml",
+]
+
+[[package]]
+name = "lar-trampoline"
+version = "0.1.0"
+dependencies = [
+ "serde",
  "thiserror",
  "toml",
 ]

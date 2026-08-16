@@ -2,10 +2,12 @@
 resolver = "2"
 members = [
     "crates/lar",
+    "crates/lar-exec",
     "crates/lar-package",
     "crates/lar-store",
     "crates/lar-resolver",
     "crates/lar-runtime",
+    "crates/lar-trampoline",
     "crates/lar-manager",
     "crates/lar-repo",
 ]
@@ -24,6 +26,7 @@ clap = { version = "4.5", features = ["derive"] }
 lar-package = { path = "crates/lar-package" }
 lar-resolver = { path = "crates/lar-resolver" }
 lar-runtime = { path = "crates/lar-runtime" }
+lar-trampoline = { path = "crates/lar-trampoline" }
 lar-manager = { path = "crates/lar-manager" }
 lar-repo = { path = "crates/lar-repo" }
 lar-store = { path = "crates/lar-store" }

@@ -4,9 +4,8 @@ use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::Command;
 
-use lar_runtime::runtime_launch_env;
-
-use crate::exports::resolve_export_from_argv0;
+use crate::export::resolve_export_from_argv0;
+use crate::launch::runtime_launch_env;
 use crate::Error;
 use crate::Result;
 

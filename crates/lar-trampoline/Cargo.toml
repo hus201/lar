@@ -1,0 +1,13 @@
+[package]
+name = "lar-trampoline"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "LAR PATH-export trampoline: launch env, export metadata, exec"
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+thiserror.workspace = true
+toml.workspace = true

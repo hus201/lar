@@ -6,17 +6,16 @@ mod exports;
 mod launch_cmd;
 mod ops;
 mod record;
-mod trampoline;
 
 pub use error::Error;
-pub use exports::{ExportMeta, ExportPublish, PathShadow, EXPORT_FORMAT};
+pub use exports::{ExportPublish, PathShadow};
+pub use lar_trampoline::{ExportMeta, EXPORT_FORMAT};
+pub use launch_cmd::{ensure_libexec_lar_exec, resolve_lar_exec_path, set_lar_exec_override};
 pub use ops::{
     install, launch, list, load, load_previous, rollback, uninstall, update, InstallOutcome,
     InstallSource, RollbackOutcome, UpdateOutcome,
 };
 pub use record::{InstallPackage, InstallRecord, INSTALL_FORMAT};
-pub use trampoline::exec_path_export;
-pub use launch_cmd::{ensure_libexec_lar_exec, resolve_lar_exec_path, set_lar_exec_override};
 
 /// Result alias for this crate.
 pub type Result<T> = std::result::Result<T, Error>;

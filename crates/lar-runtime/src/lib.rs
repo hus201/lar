@@ -352,7 +352,7 @@ mod tests {
         fs::create_dir_all(files.join("lib32")).unwrap();
         fs::write(files.join("lib/x86_64-linux-gnu/libfoo.so"), b"x").unwrap();
 
-        let paths = crate::build::library_search_paths(&files);
+        let paths = lar_trampoline::library_search_paths(&files);
         let rendered: Vec<_> = paths
             .iter()
             .map(|p| {

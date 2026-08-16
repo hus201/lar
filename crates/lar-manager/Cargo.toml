@@ -13,6 +13,7 @@ lar-repo.workspace = true
 lar-resolver.workspace = true
 lar-runtime.workspace = true
 lar-store.workspace = true
+lar-trampoline.workspace = true
 semver.workspace = true
 serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true

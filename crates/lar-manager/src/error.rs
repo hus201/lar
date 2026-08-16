@@ -65,6 +65,9 @@ pub enum Error {
     #[error(transparent)]
     Repo(#[from] lar_repo::Error),
 
+    #[error(transparent)]
+    Trampoline(#[from] lar_trampoline::Error),
+
     #[error("IO error at {}: {source}", .path.display())]
     Io {
         path: PathBuf,

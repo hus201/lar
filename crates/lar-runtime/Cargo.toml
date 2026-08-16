@@ -12,6 +12,7 @@ blake3.workspace = true
 lar-package.workspace = true
 lar-resolver.workspace = true
 lar-store.workspace = true
+lar-trampoline.workspace = true
 serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
 toml.workspace = true

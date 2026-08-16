@@ -7,7 +7,7 @@ use std::env;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use lar_manager::exec_path_export;
+use lar_trampoline::exec_path_export;
 
 fn main() -> ExitCode {
     let argv0 = match env::args_os().next() {
