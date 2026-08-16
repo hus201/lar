@@ -30,7 +30,7 @@ Today `lar resolve`:
 - Peeks candidate metadata from the package index (deps are part of the signed pin payload) without downloading archives; fetches only the winning set.
 - On materialize, verifies archive `content_hash` and that manifest dependencies match the index metadata used during search
 - Dependency cycles in the selected graph are rejected
-- Unsatisfiable graphs produce a PubGrub derivation report
+- Unsatisfiable graphs produce a PubGrub derivation report; when a package has no matching version and some sources were unavailable during discovery, the error lists each source as ✓ / ✗
 - Verifies signatures/hashes and emits advisory warnings on materialize (refuses yanked on new fetch)
 - Writes `lar.lock` with **exact** pins only
 

@@ -618,6 +618,51 @@ mod tests {
     }
 
     #[test]
+    fn resolve_reports_unavailable_sources() {
+        use lar_repo::{add_source, build_index, keygen, trust_add, write_index};
+
+        let dir = tempdir().unwrap();
+        let store = Store::open(Paths::from_prefix(dir.path().join("prefix"), false));
+        let (public, secret, _) = keygen().unwrap();
+        trust_add(&store, &public, "").unwrap();
+
+        // Healthy source that does not publish the needed package.
+        let empty = dir.path().join("empty-repo");
+        fs::create_dir_all(empty.join("packages")).unwrap();
+        let index = build_index(&empty, &secret).unwrap();
+        write_index(&empty, &index).unwrap();
+        add_source(&store, "main".into(), empty.display().to_string()).unwrap();
+        add_source(
+            &store,
+            "vendor".into(),
+            dir.path().join("missing-vendor").display().to_string(),
+        )
+        .unwrap();
+
+        let manifest = write_root(
+            dir.path(),
+            "org.example.app",
+            "0.1.0",
+            &[("org.example.lib", ">=2.0")],
+        );
+        let err = resolve(&manifest, &store).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            matches!(err, Error::Unresolvable(_)),
+            "expected Unresolvable, got {err}"
+        );
+        assert!(
+            msg.contains("org.example.lib") && msg.contains("Sources evaluated:"),
+            "{msg}"
+        );
+        assert!(msg.contains("main") && msg.contains('✓'), "{msg}");
+        assert!(
+            msg.contains("vendor") && msg.contains('✗') && msg.contains("unavailable"),
+            "{msg}"
+        );
+    }
+
+    #[test]
     fn yanked_only_match_returns_structured_yanked_error() {
         use lar_repo::{
             add_source, build_index, keygen, parse_advisories, sign_advisories, trust_add,

@@ -62,6 +62,8 @@ Source **order is priority** (earlier = higher). When resolving or fetching a pi
 3. If the same `(id, version)` exists in multiple sources, take it from the highest-priority source
 4. Never merge package contents from different sources
 
+When collecting candidates, a source whose URI cannot be parsed or whose `index.toml` cannot be read is **skipped** for that discovery pass (other sources still contribute). If resolve then finds no matching version and at least one source was unavailable, the error lists each source as ✓ / ✗ so “source down” is not mistaken for “package not published”.
+
 Local store always wins if the pin is already present. Whether a package is installable as an app is determined by its manifest (`[entry]`), not by the source.
 
 Legacy `fetch_priority` keys in older `sources.toml` files are ignored.

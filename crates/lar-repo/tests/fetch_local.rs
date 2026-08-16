@@ -343,6 +343,53 @@ fn http_fetch_works() {
 }
 
 #[test]
+fn list_dep_versions_records_unavailable_sources() {
+    let tmp = tempdir().unwrap();
+    let prefix = tmp.path().join("prefix");
+    let store = open_prefix(&prefix);
+
+    let (public, secret, _) = keygen().unwrap();
+    trust_add(&store, &public, "").unwrap();
+
+    let pkg_dir = tmp.path().join("pkg");
+    let lar_path = pack_lib(&pkg_dir, "org.example.lib", "1.0.0", b"ok");
+    let repo = tmp.path().join("repo");
+    fs::create_dir_all(repo.join("packages")).unwrap();
+    fs::copy(&lar_path, repo.join("packages/org.example.lib-1.0.0.lar")).unwrap();
+    let index = build_index(&repo, &secret).unwrap();
+    write_index(&repo, &index).unwrap();
+
+    add_source(&store, "main".into(), repo.display().to_string()).unwrap();
+    add_source(
+        &store,
+        "broken".into(),
+        tmp.path().join("missing-repo").display().to_string(),
+    )
+    .unwrap();
+
+    let listed = list_dep_versions(&store, "org.example.lib").unwrap();
+    assert!(listed.versions.contains(&"1.0.0".to_string()), "{listed:?}");
+    assert!(listed.any_source_unavailable());
+    let broken = listed
+        .sources
+        .iter()
+        .find(|s| s.name == "broken")
+        .expect("broken probe");
+    assert!(!broken.available);
+    assert!(
+        broken.detail.contains("unavailable"),
+        "{}",
+        broken.detail
+    );
+    let main = listed
+        .sources
+        .iter()
+        .find(|s| s.name == "main")
+        .expect("main probe");
+    assert!(main.available);
+}
+
+#[test]
 fn list_dep_versions_skips_yanked_index_pins() {
     let tmp = tempdir().unwrap();
     let prefix = tmp.path().join("prefix");
@@ -381,10 +428,23 @@ summary = "yanked"
     add_source(&store, "main".into(), repo.display().to_string()).unwrap();
 
     let versions = list_dep_versions(&store, "org.example.lib").unwrap();
-    assert!(versions.contains(&"1.1.0".to_string()), "{versions:?}");
     assert!(
-        !versions.contains(&"1.0.0".to_string()),
-        "yanked 1.0.0 should be excluded: {versions:?}"
+        versions.versions.contains(&"1.1.0".to_string()),
+        "{:?}",
+        versions.versions
+    );
+    assert!(
+        !versions.versions.contains(&"1.0.0".to_string()),
+        "yanked 1.0.0 should be excluded: {:?}",
+        versions.versions
+    );
+    assert!(
+        versions
+            .sources
+            .iter()
+            .any(|s| s.name == "main" && s.available),
+        "{:?}",
+        versions.sources
     );
 
     let yanked = lar_repo::list_yanked_dep_versions(&store, "org.example.lib").unwrap();

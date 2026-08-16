@@ -40,7 +40,10 @@ pub use trust::{
     save_trust, sign_content_hash, sign_message, trust_add, trust_remove, verify_content_hash,
     verify_message, TrustFile, TrustedKey, TRUST_FORMAT,
 };
-pub use versions::{list_dep_versions, list_yanked_dep_versions, YankedDepVersion};
+pub use versions::{
+    format_source_probes, list_dep_versions, list_yanked_dep_versions, DepVersionList, SourceProbe,
+    YankedDepVersion,
+};
 
 /// Result alias for this crate.
 pub type Result<T> = std::result::Result<T, Error>;

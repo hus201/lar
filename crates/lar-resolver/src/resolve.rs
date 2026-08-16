@@ -47,6 +47,7 @@ pub fn resolve_manifest(root: &PackageManifest, store: &Store) -> Result<Lockfil
         root_deps: root.dependencies.clone(),
         cache: RefCell::new(HashMap::new()),
         versions: RefCell::new(HashMap::new()),
+        source_probes: RefCell::new(HashMap::new()),
     };
 
     let solution = match pubgrub_resolve(&provider, root.package.id.clone(), root_version) {
@@ -123,6 +124,8 @@ struct LarProvider<'a> {
     root_deps: BTreeMap<String, String>,
     cache: RefCell<HashMap<(String, String), ResolvePackage>>,
     versions: RefCell<HashMap<String, Vec<Version>>>,
+    /// Source probe results from the last [`list_dep_versions`] for each id.
+    source_probes: RefCell<HashMap<String, Vec<lar_repo::SourceProbe>>>,
 }
 
 #[derive(Debug)]
@@ -135,6 +138,12 @@ enum ProviderError {
     OnlyYanked {
         id: String,
         pins: Vec<(String, String)>,
+    },
+    /// No matching version, and at least one source was unavailable during discovery.
+    Discovery {
+        id: String,
+        requirement: String,
+        sources: Vec<lar_repo::SourceProbe>,
     },
     Other(String),
 }
@@ -151,6 +160,15 @@ impl fmt::Display for ProviderError {
                 f,
                 "package {id} has only yanked versions matching the requirement: {}",
                 format_yanked_pins(pins)
+            ),
+            Self::Discovery {
+                id,
+                requirement,
+                sources,
+            } => write!(
+                f,
+                "package {id} could not be resolved for requirement `{requirement}`\n\n{}",
+                lar_repo::format_source_probes(sources)
             ),
             Self::Other(msg) => f.write_str(msg),
         }
@@ -187,9 +205,10 @@ impl<'a> LarProvider<'a> {
         if let Some(cached) = self.versions.borrow().get(id) {
             return Ok(cached.clone());
         }
+        let listed = lar_repo::list_dep_versions(self.store, id).map_err(ProviderError::from)?;
         let mut parsed = Vec::new();
-        for ver_str in lar_repo::list_dep_versions(self.store, id).map_err(ProviderError::from)? {
-            if let Ok(ver) = Version::parse(&ver_str) {
+        for ver_str in &listed.versions {
+            if let Ok(ver) = Version::parse(ver_str) {
                 parsed.push(ver);
             }
         }
@@ -197,7 +216,18 @@ impl<'a> LarProvider<'a> {
         self.versions
             .borrow_mut()
             .insert(id.to_string(), parsed.clone());
+        self.source_probes
+            .borrow_mut()
+            .insert(id.to_string(), listed.sources);
         Ok(parsed)
+    }
+
+    fn source_probes_for(&self, id: &str) -> Vec<lar_repo::SourceProbe> {
+        self.source_probes
+            .borrow()
+            .get(id)
+            .cloned()
+            .unwrap_or_default()
     }
 
     fn load_pkg(
@@ -261,6 +291,16 @@ impl<'a> DependencyProvider for LarProvider<'a> {
         if let Some(err) = yanked_reason_in_range(self.store, package, range)? {
             return Err(err);
         }
+
+        // Distinguish "not published" from "source(s) unavailable during discovery".
+        let probes = self.source_probes_for(package);
+        if probes.iter().any(|p| !p.available) {
+            return Err(ProviderError::Discovery {
+                id: package.clone(),
+                requirement: range.to_string(),
+                sources: probes,
+            });
+        }
         Ok(None)
     }
 
@@ -301,6 +341,14 @@ fn map_choose_version_error(package: &str, source: ProviderError) -> Error {
         ProviderError::OnlyYanked { id, pins } => Error::Unresolvable(format!(
             "package {id} has only yanked versions matching the requirement: {}",
             format_yanked_pins(&pins)
+        )),
+        ProviderError::Discovery {
+            id,
+            requirement,
+            sources,
+        } => Error::Unresolvable(format!(
+            "package {id} could not be resolved for requirement `{requirement}`\n\n{}",
+            lar_repo::format_source_probes(&sources)
         )),
         ProviderError::Other(msg) => {
             Error::Other(format!("choosing a version for {package} failed: {msg}"))
