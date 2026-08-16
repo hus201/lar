@@ -22,6 +22,37 @@ pub struct PackageManifest {
     pub entry: Option<Entry>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub desktop: Option<Desktop>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub platform: Option<PlatformRequirements>,
+}
+
+/// Built-in host platform capability ids (MVP).
+pub const PLATFORM_CAPABILITIES: &[&str] = &[
+    "wayland",
+    "x11",
+    "vulkan",
+    "opengl",
+    "dbus",
+    "dri",
+    "systemd-user",
+];
+
+/// Optional `[platform]` table: host OS capabilities (not LAR packages).
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PlatformRequirements {
+    /// Capabilities that must be present on the host.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub requires: Vec<String>,
+    /// Capabilities that are nice to have; warn if missing.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub optional: Vec<String>,
+}
+
+impl PlatformRequirements {
+    pub fn is_empty(&self) -> bool {
+        self.requires.is_empty() && self.optional.is_empty()
+    }
 }
 
 /// `[package]` table.
@@ -110,6 +141,47 @@ pub(crate) fn validate_manifest(manifest: &PackageManifest) -> Result<(), Error>
         }
     }
 
+    if let Some(platform) = &manifest.platform {
+        validate_platform(platform)?;
+    }
+
+    Ok(())
+}
+
+fn validate_platform(platform: &PlatformRequirements) -> Result<(), Error> {
+    validate_platform_list(&platform.requires, "platform.requires")?;
+    validate_platform_list(&platform.optional, "platform.optional")?;
+    let requires: std::collections::BTreeSet<_> = platform.requires.iter().collect();
+    for cap in &platform.optional {
+        if requires.contains(cap) {
+            return Err(Error::Validation(format!(
+                "platform capability `{cap}` cannot be both required and optional"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_platform_list(list: &[String], label: &str) -> Result<(), Error> {
+    let mut seen = std::collections::BTreeSet::new();
+    for cap in list {
+        if cap.trim().is_empty() {
+            return Err(Error::Validation(format!(
+                "{label} entries must not be empty"
+            )));
+        }
+        if !PLATFORM_CAPABILITIES.contains(&cap.as_str()) {
+            return Err(Error::Validation(format!(
+                "unknown platform capability `{cap}` (supported: {})",
+                PLATFORM_CAPABILITIES.join(", ")
+            )));
+        }
+        if !seen.insert(cap.clone()) {
+            return Err(Error::Validation(format!(
+                "duplicate platform capability `{cap}` in {label}"
+            )));
+        }
+    }
     Ok(())
 }
 
@@ -346,6 +418,67 @@ version = "0.1.0"
         .unwrap();
         assert_eq!(manifest.dependencies["org.example.lib"], "^1.0");
         assert_eq!(manifest.dependencies["org.example.base"], "~2.1.0");
+    }
+
+    #[test]
+    fn accepts_platform_requirements() {
+        let manifest = parse_manifest(
+            r#"
+[package]
+format = 1
+id = "org.example.app"
+name = "App"
+version = "0.1.0"
+
+[platform]
+requires = ["wayland", "dbus"]
+optional = ["vulkan"]
+"#,
+        )
+        .unwrap();
+        let platform = manifest.platform.unwrap();
+        assert_eq!(platform.requires, ["wayland", "dbus"]);
+        assert_eq!(platform.optional, ["vulkan"]);
+    }
+
+    #[test]
+    fn rejects_unknown_platform_capability() {
+        let err = parse_manifest(
+            r#"
+[package]
+format = 1
+id = "org.example.app"
+name = "App"
+version = "0.1.0"
+
+[platform]
+requires = ["wayland", "magic-bus"]
+"#,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("magic-bus"), "{err}");
+    }
+
+    #[test]
+    fn rejects_platform_overlap() {
+        let err = parse_manifest(
+            r#"
+[package]
+format = 1
+id = "org.example.app"
+name = "App"
+version = "0.1.0"
+
+[platform]
+requires = ["wayland"]
+optional = ["wayland"]
+"#,
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string().contains("both required and optional"),
+            "{err}"
+        );
     }
 
     #[test]

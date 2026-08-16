@@ -7,18 +7,20 @@ use std::process::ExitCode;
 
 use clap::Parser;
 
-use cli::{Cli, Commands, PackageCmd, RepoCmd, RuntimeCmd, StoreCmd, TrustCmd};
+use cli::{Cli, Commands, PackageCmd, PlatformCmd, RepoCmd, RuntimeCmd, StoreCmd, TrustCmd};
 use lar_manager::{
-    install as install_app, launch as launch_app, list as list_installs, rollback as rollback_app,
-    uninstall as uninstall_app, update as update_app, InstallSource, UpdateOutcome,
+    install as install_app, launch as launch_app, list as list_installs, load as load_install,
+    need_for_record, rollback as rollback_app, uninstall as uninstall_app, update as update_app,
+    InstallSource, UpdateOutcome,
 };
-use lar_package::{init_package, inspect, pack, validate_package, InitOptions};
+use lar_package::{init_package, inspect, load_manifest, pack, validate_package, InitOptions};
+use lar_platform::{check_host, collect_from_manifests, probe, Capability, PlatformNeed};
 use lar_repo::{
     add_source, audit, audit_should_fail, build_index, default_source_name, fingerprint_matches,
-    init_repo, is_key_trusted, keygen, load_source_pubkey, load_sources, load_trust,
-    move_source, move_source_after, move_source_before, publish_package, remove_source,
-    sign_advisories_in_dir, trust_add, trust_remove, unpublish_package, validate_repo,
-    write_index, write_repo_pubkey_from_secret, AuditScope,
+    init_repo, is_key_trusted, keygen, load_source_pubkey, load_sources, load_trust, move_source,
+    move_source_after, move_source_before, publish_package, remove_source, sign_advisories_in_dir,
+    trust_add, trust_remove, unpublish_package, validate_repo, write_index,
+    write_repo_pubkey_from_secret, AuditScope,
 };
 use lar_resolver::{lockfile_path_for_manifest, resolve, write_lockfile};
 use lar_runtime::{
@@ -102,11 +104,95 @@ fn run(system: bool, command: Commands) -> Result<ExitCode, String> {
             Ok(ExitCode::SUCCESS)
         }
         Commands::Audit { store, installed } => run_audit(system, store, installed),
+        Commands::Platform { command } => run_platform(system, command),
         Commands::Config { json } => {
             run_config(system, json)?;
             Ok(ExitCode::SUCCESS)
         }
     }
+}
+
+fn run_platform(system: bool, command: PlatformCmd) -> Result<ExitCode, String> {
+    match command {
+        PlatformCmd::Check { target } => run_platform_check(system, target.as_deref()),
+    }
+}
+
+fn run_platform_check(system: bool, target: Option<&str>) -> Result<ExitCode, String> {
+    println!("Host capabilities (presence heuristics; not runtime verification):");
+    for cap in Capability::all() {
+        let result = probe(*cap);
+        let status = if result.present { "present" } else { "missing" };
+        println!("  {cap}: {status} ({})", result.detail);
+    }
+
+    let need = match target {
+        None => {
+            println!("\nNo package or install id given; host inventory only.");
+            return Ok(ExitCode::SUCCESS);
+        }
+        Some(target) => resolve_platform_need(system, target)?,
+    };
+
+    println!("\nPackage needs:");
+    if need.is_empty() {
+        println!("  (none)");
+        return Ok(ExitCode::SUCCESS);
+    }
+    if !need.requires.is_empty() {
+        let list = need
+            .requires
+            .iter()
+            .map(|c| c.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        println!("  requires: {list}");
+    }
+    if !need.optional.is_empty() {
+        let list = need
+            .optional
+            .iter()
+            .map(|c| c.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        println!("  optional: {list}");
+    }
+
+    let report = check_host(&need);
+    report.emit_optional_warnings(&mut io::stderr());
+    if !report.ok() {
+        eprintln!("{}", report.required_error_message());
+        return Ok(ExitCode::FAILURE);
+    }
+    println!("\nRequired capability surfaces look present on this host.");
+    Ok(ExitCode::SUCCESS)
+}
+
+fn resolve_platform_need(system: bool, target: &str) -> Result<PlatformNeed, String> {
+    let path = Path::new(target);
+    let manifest_path = if path.is_file() {
+        Some(path.to_path_buf())
+    } else if path.is_dir() {
+        let candidate = path.join("package.toml");
+        if candidate.is_file() {
+            Some(candidate)
+        } else {
+            None
+        }
+    } else if target.ends_with("package.toml") || target.ends_with(".toml") {
+        Some(path.to_path_buf())
+    } else {
+        None
+    };
+
+    if let Some(manifest_path) = manifest_path {
+        let manifest = load_manifest(&manifest_path).map_err(|err| err.to_string())?;
+        return collect_from_manifests(&[&manifest]).map_err(|err| err.to_string());
+    }
+
+    let store = open_store(system);
+    let record = load_install(&store, target).map_err(|err| err.to_string())?;
+    need_for_record(&store, &record).map_err(|err| err.to_string())
 }
 
 fn open_store(system: bool) -> Store {
@@ -295,10 +381,7 @@ fn run_runtime(system: bool, command: RuntimeCmd) -> Result<(), String> {
             let report = verify_runtime(&store, &runtime).map_err(|err| err.to_string())?;
             println!(
                 "ok {} ({}) {} packages, {} files",
-                report.runtime_id,
-                report.compose,
-                report.packages_checked,
-                report.files_checked
+                report.runtime_id, report.compose, report.packages_checked, report.files_checked
             );
             Ok(())
         }
@@ -436,8 +519,8 @@ fn run_repo(system: bool, command: RepoCmd) -> Result<(), String> {
                 Some(input) => Some(read_key_material(input)?),
                 None => None,
             };
-            let (public, key_id) = load_source_pubkey(&uri, pubkey_material.as_deref())
-                .map_err(|e| e.to_string())?;
+            let (public, key_id) =
+                load_source_pubkey(&uri, pubkey_material.as_deref()).map_err(|e| e.to_string())?;
             let already = is_key_trusted(&store, &key_id).map_err(|e| e.to_string())?;
             if !already {
                 let accept = if let Some(ref want) = fingerprint {

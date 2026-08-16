@@ -172,6 +172,7 @@ fn help_lists_core_commands() {
         "uninstall",
         "repo",
         "audit",
+        "platform",
         "config",
     ] {
         assert!(stdout.contains(cmd), "missing {cmd} in --help:\n{stdout}");
@@ -1829,7 +1830,15 @@ fn repo_add_trusts_pubkey_with_yes() {
         .success());
 
     let add = lar_user(&prefix)
-        .args(["repo", "add", "--name", "vendor", "--yes", "--comment", "Vendor"])
+        .args([
+            "repo",
+            "add",
+            "--name",
+            "vendor",
+            "--yes",
+            "--comment",
+            "Vendor",
+        ])
         .arg(&repo)
         .output()
         .unwrap();
@@ -1869,7 +1878,11 @@ fn repo_add_trusts_pubkey_with_yes() {
         .arg(&repo2)
         .output()
         .unwrap();
-    assert!(add2.status.success(), "{}", String::from_utf8_lossy(&add2.stderr));
+    assert!(
+        add2.status.success(),
+        "{}",
+        String::from_utf8_lossy(&add2.stderr)
+    );
     let out2 = String::from_utf8_lossy(&add2.stdout);
     assert!(!out2.contains("trusted "), "{out2}");
     assert!(out2.contains("added mirror"), "{out2}");
@@ -2127,4 +2140,93 @@ fn repo_init_publish_validate_unpublish() {
         "{un_out}"
     );
     assert!(!repo.join("packages/org.example.lib-1.0.0.lar").is_file());
+}
+
+#[test]
+fn platform_check_host_inventory_ok() {
+    let output = lar()
+        .args(["platform", "check"])
+        .output()
+        .expect("failed to run lar");
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Host capabilities"), "{stdout}");
+    assert!(stdout.contains("presence heuristics"), "{stdout}");
+    assert!(stdout.contains("wayland:"), "{stdout}");
+}
+
+#[test]
+fn platform_check_package_fails_when_required_missing() {
+    let dir = tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("files")).unwrap();
+    fs::write(
+        dir.path().join("package.toml"),
+        r#"
+[package]
+format = 1
+id = "org.example.plat"
+name = "Plat"
+version = "0.1.0"
+
+[platform]
+requires = ["wayland"]
+"#,
+    )
+    .unwrap();
+
+    let output = lar()
+        .env("LAR_PLATFORM_OVERRIDE", "missing=wayland")
+        .args(["platform", "check"])
+        .arg(dir.path())
+        .output()
+        .expect("failed to run lar");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("wayland") || stderr.contains("platform"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn platform_check_package_ok_when_present() {
+    let dir = tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("files")).unwrap();
+    fs::write(
+        dir.path().join("package.toml"),
+        r#"
+[package]
+format = 1
+id = "org.example.plat"
+name = "Plat"
+version = "0.1.0"
+
+[platform]
+requires = ["wayland"]
+optional = ["vulkan"]
+"#,
+    )
+    .unwrap();
+
+    let output = lar()
+        .env("LAR_PLATFORM_OVERRIDE", "present=wayland+vulkan")
+        .args(["platform", "check"])
+        .arg(dir.path().join("package.toml"))
+        .output()
+        .expect("failed to run lar");
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("requires: wayland"), "{stdout}");
+    assert!(
+        stdout.contains("Required capability surfaces look present"),
+        "{stdout}"
+    );
 }

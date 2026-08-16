@@ -4,6 +4,8 @@ use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::Command;
 
+use lar_platform::{check_host, collect_platform_need};
+
 use crate::export::resolve_export_from_argv0;
 use crate::launch::runtime_launch_env;
 use crate::Error;
@@ -31,6 +33,16 @@ pub fn exec_path_export(argv0: &Path, args: &[String]) -> Result<()> {
             "export runtime missing at {} (reinstall the application?)",
             meta.runtime.display()
         )));
+    }
+
+    if !meta.platform_requires.is_empty() || !meta.platform_optional.is_empty() {
+        let need = collect_platform_need(&meta.platform_requires, &meta.platform_optional)
+            .map_err(|err| Error::Other(err.to_string()))?;
+        let report = check_host(&need);
+        report.emit_optional_warnings(&mut std::io::stderr());
+        if !report.ok() {
+            return Err(Error::Other(report.required_error_message()));
+        }
     }
 
     let env = runtime_launch_env(&meta.runtime);

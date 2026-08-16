@@ -9,6 +9,7 @@ rust-version.workspace = true
 
 [dependencies]
 lar-package.workspace = true
+lar-platform.workspace = true
 lar-repo.workspace = true
 lar-resolver.workspace = true
 lar-runtime.workspace = true

@@ -11,6 +11,7 @@ use semver::Version;
 use crate::desktop;
 use crate::exports;
 use crate::launch_cmd::ensure_libexec_lar_exec;
+use crate::platform;
 use crate::record::{InstallPackage, InstallRecord, INSTALL_FORMAT};
 use crate::Error;
 use crate::Result;
@@ -273,6 +274,7 @@ pub fn launch(
             });
         }
     }
+    platform::enforce_for_record(store, &record)?;
     Ok(run_runtime_entry(
         store,
         &runtime_path,
@@ -374,6 +376,7 @@ fn compose_install(
     let manifest = load_manifest(&root.path.join("package.toml"))?;
     let lock = resolve_manifest(&manifest, store)?;
     verify_lockfile_ready(&lock, store)?;
+    platform::enforce_platform(&platform::need_for_lock_packages(store, &lock.packages)?)?;
 
     fs::create_dir_all(&store.paths().installs).map_err(|source| Error::Io {
         path: store.paths().installs.clone(),
@@ -545,7 +548,9 @@ fn lookup_store_root(store: &Store, id: &str, version: Option<&str>) -> Result<S
         }
         return lar_repo::fetch_into_store(store, id, version, &mut std::io::stderr()).map_err(
             |err| match err {
-                lar_repo::Error::PackageNotFound { id, version } => Error::NotInStore { id, version },
+                lar_repo::Error::PackageNotFound { id, version } => {
+                    Error::NotInStore { id, version }
+                }
                 other => other.into(),
             },
         );

@@ -736,6 +736,7 @@ dependencies = [
  "clap",
  "lar-manager",
  "lar-package",
+ "lar-platform",
  "lar-repo",
  "lar-resolver",
  "lar-runtime",
@@ -756,6 +757,7 @@ name = "lar-manager"
 version = "0.10.0"
 dependencies = [
  "lar-package",
+ "lar-platform",
  "lar-repo",
  "lar-resolver",
  "lar-runtime",
@@ -781,6 +783,15 @@ dependencies = [
  "thiserror",
  "toml",
  "zstd",
+]
+
+[[package]]
+name = "lar-platform"
+version = "0.10.0"
+dependencies = [
+ "lar-package",
+ "tempfile",
+ "thiserror",
 ]
 
 [[package]]
@@ -846,6 +857,7 @@ dependencies = [
 name = "lar-trampoline"
 version = "0.10.0"
 dependencies = [
+ "lar-platform",
  "serde",
  "thiserror",
  "toml",

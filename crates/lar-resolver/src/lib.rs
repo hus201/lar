@@ -688,11 +688,7 @@ mod tests {
         )
         .unwrap();
         fs::write(pkg.join("files/payload.txt"), b"yanked").unwrap();
-        pack(
-            &pkg,
-            &repo.join("packages/org.example.lib-1.0.0.lar"),
-        )
-        .unwrap();
+        pack(&pkg, &repo.join("packages/org.example.lib-1.0.0.lar")).unwrap();
         let index = build_index(&repo, &secret).unwrap();
         write_index(&repo, &index).unwrap();
         let signed = sign_advisories(

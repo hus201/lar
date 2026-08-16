@@ -1,0 +1,15 @@
+[package]
+name = "lar-platform"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "LAR host platform capability probes"
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+lar-package.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

@@ -48,7 +48,14 @@ binaries = ["bin/app"]
 [desktop]
 name = "Example App"
 categories = ["Utility"]
+
+# Optional: host OS capabilities (not LAR packages)
+[platform]
+requires = ["wayland"]
+optional = ["vulkan"]
 ```
+
+Debug host probes without installing: `lar platform check ./my-lib` (or an installed app id). Details: [platform.md](../design/platform.md#platform-requirements).
 
 ## 3. Validate and pack
 

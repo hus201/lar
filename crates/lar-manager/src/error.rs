@@ -50,6 +50,9 @@ pub enum Error {
     #[error("invalid install record: {0}")]
     InvalidRecord(String),
 
+    #[error("platform requirements not met: {0}")]
+    Platform(String),
+
     #[error(transparent)]
     Package(#[from] lar_package::Error),
 

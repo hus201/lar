@@ -162,10 +162,7 @@ pub fn fingerprint_matches(key_id: &str, want: &str) -> bool {
 /// Load a publisher pubkey from `--pubkey` override or `{uri}/ed25519.pub`.
 ///
 /// Returns `(public_key, key_id)`.
-pub fn load_source_pubkey(
-    uri: &str,
-    pubkey_override: Option<&str>,
-) -> Result<(String, String)> {
+pub fn load_source_pubkey(uri: &str, pubkey_override: Option<&str>) -> Result<(String, String)> {
     let raw = if let Some(pk) = pubkey_override {
         let trimmed = pk.trim();
         if trimmed.is_empty() {

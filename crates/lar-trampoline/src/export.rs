@@ -15,6 +15,12 @@ pub struct ExportMeta {
     pub app_id: String,
     pub runtime: PathBuf,
     pub binary: PathBuf,
+    /// Required host platform capabilities (union of app + deps at publish time).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub platform_requires: Vec<String>,
+    /// Optional host platform capabilities.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub platform_optional: Vec<String>,
 }
 
 /// Current export metadata format.

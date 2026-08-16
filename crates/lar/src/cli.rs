@@ -107,11 +107,26 @@ pub enum Commands {
         #[arg(long)]
         installed: bool,
     },
+    /// Probe host platform capabilities (presence heuristics)
+    Platform {
+        #[command(subcommand)]
+        command: PlatformCmd,
+    },
     /// Print resolved configuration and store paths
     Config {
         /// Emit JSON instead of text
         #[arg(long)]
         json: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum PlatformCmd {
+    /// Check host capability surfaces (presence only; not runtime verification)
+    Check {
+        /// Path to `package.toml` (or its directory), or an installed application id
+        #[arg(value_name = "PACKAGE_TOML|ID")]
+        target: Option<String>,
     },
 }
 

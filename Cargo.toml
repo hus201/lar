@@ -10,6 +10,7 @@ members = [
     "crates/lar-trampoline",
     "crates/lar-manager",
     "crates/lar-repo",
+    "crates/lar-platform",
 ]
 
 [workspace.package]
@@ -24,6 +25,7 @@ rust-version = "1.80"
 blake3 = "1.5"
 clap = { version = "4.5", features = ["derive"] }
 lar-package = { path = "crates/lar-package" }
+lar-platform = { path = "crates/lar-platform" }
 lar-resolver = { path = "crates/lar-resolver" }
 lar-runtime = { path = "crates/lar-runtime" }
 lar-trampoline = { path = "crates/lar-trampoline" }

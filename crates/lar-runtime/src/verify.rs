@@ -139,9 +139,9 @@ fn check_placed_file(
                     "`{rel}` should be a symlink (compose=symlink)"
                 )));
             }
-            let actual = fs::canonicalize(runtime_file).map_err(|source| Error::VerifyFailed(
-                format!("dangling or unreadable symlink `{rel}`: {source}"),
-            ))?;
+            let actual = fs::canonicalize(runtime_file).map_err(|source| {
+                Error::VerifyFailed(format!("dangling or unreadable symlink `{rel}`: {source}"))
+            })?;
             let expected = fs::canonicalize(store_file).map_err(|source| Error::Io {
                 path: store_file.to_path_buf(),
                 source,

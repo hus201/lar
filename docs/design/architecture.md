@@ -81,17 +81,17 @@ Responsibilities:
 Known limitations:
 
 - One rollback generation
-- No platform requirement model yet
+- Platform requirements are presence-only heuristics (no runtime / min-version / custom caps) — [platform.md](platform.md#platform-requirements)
 - Real-world ELF compatibility still being validated
 
 ## Application Lifecycle
 
 **Status:** Implemented — MVP — [install.md](../implementation/install.md), [desktop.md](../implementation/desktop.md)
 
-Install records under `{prefix}/installs/` track what the user installed, pin store packages, and point at a composed runtime. `lar update` / `lar rollback` keep a single previous generation. Apps with `[entry]` get freedesktop `.desktop` files and PATH exports; menus and shells are the normal launch path (`lar launch` is admin/debug).
+Install records under `{prefix}/installs/` track what the user installed, pin store packages, and point at a composed runtime. `lar update` / `lar rollback` keep a single previous generation. Apps with `[entry]` get freedesktop `.desktop` files and PATH exports; menus and shells are the normal launch path (`lar launch` is admin/debug). Install and launch refuse when required host platform capabilities are missing.
 
 Known limitations:
 
 - One rollback generation
-- No platform requirement model yet
+- Platform requirements are presence-only heuristics (no runtime / min-version / custom caps) — [platform.md](platform.md#platform-requirements)
 - Real-world ELF compatibility still being validated

@@ -20,6 +20,6 @@ Design docs describe *what* LAR is and *why*. Implementation details live under 
 | [dependency-resolution.md](dependency-resolution.md) | Resolving dependencies | Implemented |
 | [runtime.md](runtime.md) | Runtime composition, linking, launch | Implemented |
 | [desktop-and-services.md](desktop-and-services.md) | Desktop integration and services | Partial |
-| [platform.md](platform.md) | OS boundary, security, updates, rollback | Partial |
-| [future-extensions.md](future-extensions.md) | Possible future work | Planned |
+| [platform.md](platform.md) | OS boundary, platform requirements, security, updates | Partial (platform reqs MVP) |
+| [future-extensions.md](future-extensions.md) | Future work beyond current MVP | Planned |
 | [summary.md](summary.md) | Design summary | Design |

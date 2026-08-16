@@ -368,8 +368,7 @@ fn yanked_reason_in_range(
     package: &str,
     range: &SemverRanges,
 ) -> std::result::Result<Option<ProviderError>, ProviderError> {
-    let yanked =
-        lar_repo::list_yanked_dep_versions(store, package).map_err(ProviderError::from)?;
+    let yanked = lar_repo::list_yanked_dep_versions(store, package).map_err(ProviderError::from)?;
     let mut matched: Vec<_> = yanked
         .into_iter()
         .filter(|y| {

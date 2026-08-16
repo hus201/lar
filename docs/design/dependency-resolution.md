@@ -35,3 +35,5 @@ Today `lar resolve`:
 - Writes `lar.lock` with **exact** pins only
 
 See [architecture.md](architecture.md) and [repos.md](../implementation/repos.md).
+
+**Out of scope for current resolve:** host **platform requirements** (Wayland, Vulkan, D-Bus, …). Those are not LAR packages; they are enforced at install/launch — see [platform.md](platform.md#platform-requirements).

@@ -376,11 +376,7 @@ fn list_dep_versions_records_unavailable_sources() {
         .find(|s| s.name == "broken")
         .expect("broken probe");
     assert!(!broken.available);
-    assert!(
-        broken.detail.contains("unavailable"),
-        "{}",
-        broken.detail
-    );
+    assert!(broken.detail.contains("unavailable"), "{}", broken.detail);
     let main = listed
         .sources
         .iter()

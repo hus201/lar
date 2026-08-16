@@ -75,6 +75,7 @@ pub fn init_package(dir: &Path, opts: &InitOptions) -> Result<PathBuf> {
         dependencies: Default::default(),
         entry: None,
         desktop: None,
+        platform: None,
     };
     crate::manifest::validate_manifest(&manifest)?;
     let text = toml::to_string_pretty(&manifest)?;

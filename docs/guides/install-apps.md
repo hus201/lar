@@ -23,6 +23,8 @@ lar launch org.example.app
 
 Apps with `[entry]` also get PATH exports and a `.desktop` file under the LAR prefix. Day-to-day use is usually the desktop menu or an export on `PATH`, not `lar launch`.
 
+If the app (or any dependency) declares `[platform]` requirements, install and launch refuse when a **required** host capability is missing; missing **optional** caps print a warning. Check the host with `lar platform check org.example.app` — [platform.md](../design/platform.md#platform-requirements).
+
 Replace an existing install:
 
 ```bash

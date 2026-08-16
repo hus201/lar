@@ -11,6 +11,7 @@ use lar_store::Store;
 use lar_trampoline::{ExportMeta, EXPORT_FORMAT};
 
 use crate::launch_cmd::ensure_libexec_lar_exec;
+use crate::platform;
 use crate::record::InstallRecord;
 use crate::Error;
 use crate::Result;
@@ -92,6 +93,10 @@ pub fn publish(store: &Store, record: &InstallRecord) -> Result<ExportPublish> {
 
     remove(store, &record.id)?;
     let lar_link = ensure_libexec_lar_exec(store)?;
+    let (platform_requires, platform_optional) = {
+        let need = platform::need_for_record(store, record)?;
+        platform::need_to_export_lists(&need)
+    };
 
     let prefix_bin = store.paths().share_bin();
     let session_bin = store.paths().bin.clone();
@@ -133,6 +138,8 @@ pub fn publish(store: &Store, record: &InstallRecord) -> Result<ExportPublish> {
             app_id: record.id.clone(),
             runtime: runtime_path.clone(),
             binary: exe,
+            platform_requires: platform_requires.clone(),
+            platform_optional: platform_optional.clone(),
         };
         write_meta(&exports_dir.join(format!("{cmd}.toml")), &meta)?;
 

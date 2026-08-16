@@ -11,6 +11,7 @@ A package is identified by reverse-DNS `id` and semver `version`. Capabilities c
 - `[dependencies]` — semver requirements (exact or ranges such as `^1.0`)
 - `[entry]` — one or more launchable binaries
 - `[desktop]` — desktop integration metadata (`name`, `icon`, `categories`) used when publishing `.desktop` files
+- `[platform]` — host OS capability requirements (Wayland, Vulkan, …); not LAR packages
 - `files/` — immutable payload
 
 ## Staged directory layout
@@ -102,7 +103,28 @@ Unknown keys are rejected.
 
 ### Top-level tables
 
-Only `package`, `dependencies`, `entry`, and `desktop` are allowed. Unknown top-level tables are rejected.
+Only `package`, `dependencies`, `entry`, `desktop`, and `platform` are allowed. Unknown top-level tables are rejected.
+
+### `[platform]` (optional)
+
+Host OS capabilities that are **not** LAR packages. Checked at install and launch against the machine; they are never resolved into the SxS store.
+
+```toml
+[platform]
+requires = ["wayland", "dbus"]
+optional = ["vulkan"]
+```
+
+| Field | Notes |
+|-------|--------|
+| `requires` | Must be present on the host or install/launch fails |
+| `optional` | Warn on stderr if missing; install/launch continues |
+
+Built-in capability ids (MVP): `wayland`, `x11`, `vulkan`, `opengl`, `dbus`, `dri`, `systemd-user`. Unknown ids are rejected. A capability cannot appear in both lists. Presence only (no min-version yet).
+
+Checks are **presence heuristics** (socket / library / device node), not proof that Wayland, Vulkan, etc. will work at runtime. See [platform.md](../design/platform.md#platform-requirements).
+
+Design: [platform.md](../design/platform.md).
 
 ## Archive layout (`.lar`)
 

@@ -53,10 +53,11 @@ The `[[packages]]` lists (active **and** previous) are install pin sets used as 
 2. Refuse if `{installs}/{id}` already exists unless `--force`.
 3. Resolve the root manifest against the store (`resolve_manifest`).
 4. Verify the lock is runtime-ready (root included with matching `content_hash`).
-5. Compose a runtime with the selected `--compose` mode.
-6. Write `install.toml` atomically under `installs/{id}/`.
-7. Publish PATH exports and `.desktop` files when the root has `[entry]` — [desktop.md](desktop.md).
-8. On replace (`--force` or update): stash the old active record as `previous.toml` and **keep** its runtime. If an older `previous.toml` already existed, drop that older runtime when it is unused by the new active/previous pair.
+5. Collect `[platform]` from root + every locked package; refuse if a **required** host capability is missing; warn on missing **optional** — [platform.md](../design/platform.md#platform-requirements).
+6. Compose a runtime with the selected `--compose` mode.
+7. Write `install.toml` atomically under `installs/{id}/`.
+8. Publish PATH exports and `.desktop` files when the root has `[entry]` — [desktop.md](desktop.md).
+9. On replace (`--force` or update): stash the old active record as `previous.toml` and **keep** its runtime. If an older `previous.toml` already existed, drop that older runtime when it is unused by the new active/previous pair.
 
 ### Update
 
@@ -103,9 +104,10 @@ lar uninstall org.example.app
 - `update` prints `updated id old -> new (runtime …)` or `up to date id version`.
 - `rollback` prints `rolled back id version (runtime …)`.
 - `list` prints `id version compose runtime_id` (sorted by id).
-- `launch` runs an installed entry binary for admin/debug (exit code forwarded); normal launch is PATH/desktop — [desktop.md](desktop.md).
+- `launch` runs an installed entry binary for admin/debug (exit code forwarded); normal launch is PATH/desktop — [desktop.md](desktop.md). Re-checks platform requirements before exec.
 - `uninstall` prints `uninstalled id version (runtime <runtime_id>)`.
 - Install/update/rollback may print `warning: PATH: … shadows LAR export …` on stderr when a host binary would win — [desktop.md](desktop.md).
+- Debug host caps: `lar platform check [package.toml|id]`.
 
 ## Related
 

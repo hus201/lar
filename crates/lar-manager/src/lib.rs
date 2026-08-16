@@ -5,6 +5,7 @@ mod error;
 mod exports;
 mod launch_cmd;
 mod ops;
+mod platform;
 mod record;
 
 pub use error::Error;
@@ -14,6 +15,10 @@ pub use launch_cmd::{ensure_libexec_lar_exec, resolve_lar_exec_path, set_lar_exe
 pub use ops::{
     install, launch, list, load, load_previous, rollback, uninstall, update, InstallOutcome,
     InstallSource, RollbackOutcome, UpdateOutcome,
+};
+pub use platform::{
+    enforce_for_record, enforce_platform, need_for_lock_packages, need_for_record,
+    need_to_export_lists,
 };
 pub use record::{InstallPackage, InstallRecord, INSTALL_FORMAT};
 
@@ -548,5 +553,74 @@ mod tests {
                     .next()
                     .is_none()
         );
+    }
+
+    #[test]
+    fn install_and_launch_respect_required_platform() {
+        // Env override is process-global; keep both cases in one test to avoid races.
+        let dir = tempdir().unwrap();
+        let store = test_store(dir.path());
+
+        let pkg = dir.path().join("app-src");
+        init_package(
+            &pkg,
+            &InitOptions {
+                id: "org.example.plat".into(),
+                name: "Plat".into(),
+                version: "0.1.0".into(),
+                force: false,
+            },
+        )
+        .unwrap();
+        let bin = pkg.join("files/bin");
+        fs::create_dir_all(&bin).unwrap();
+        let script = bin.join("app");
+        fs::write(&script, "#!/bin/sh\necho ok\n").unwrap();
+        let mut perms = fs::metadata(&script).unwrap().permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&script, perms).unwrap();
+
+        let mut manifest = load_manifest(&pkg.join("package.toml")).unwrap();
+        manifest.entry = Some(lar_package::Entry {
+            default: Some("bin/app".into()),
+            binaries: vec!["bin/app".into()],
+        });
+        manifest.platform = Some(lar_package::PlatformRequirements {
+            requires: vec!["wayland".into()],
+            optional: vec![],
+        });
+        fs::write(
+            pkg.join("package.toml"),
+            toml::to_string_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+        let archive = dir.path().join("org.example.plat-0.1.0.lar");
+        pack(&pkg, &archive).unwrap();
+
+        std::env::set_var("LAR_PLATFORM_OVERRIDE", "missing=wayland");
+        let err = install(
+            &store,
+            &InstallSource::Archive(archive.clone()),
+            ComposeMode::Symlink,
+            false,
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("wayland") || msg.contains("platform"), "{msg}");
+
+        std::env::set_var("LAR_PLATFORM_OVERRIDE", "present=wayland");
+        install(
+            &store,
+            &InstallSource::Archive(archive),
+            ComposeMode::Symlink,
+            false,
+        )
+        .unwrap();
+
+        std::env::set_var("LAR_PLATFORM_OVERRIDE", "missing=wayland");
+        let err = launch(&store, "org.example.plat", None, &[]).unwrap_err();
+        std::env::remove_var("LAR_PLATFORM_OVERRIDE");
+        let msg = err.to_string();
+        assert!(msg.contains("wayland") || msg.contains("platform"), "{msg}");
     }
 }
