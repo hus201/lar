@@ -41,7 +41,7 @@ install -m 755 "$STAGING/bin/lar" "$STAGE/bin/lar"
 install -m 755 "$STAGING/bin/lar-exec" "$STAGE/bin/lar-exec"
 install -m 644 "$ROOT/README.md" "$STAGE/share/doc/lar/README.md"
 install -m 644 "$ROOT/LICENSE" "$STAGE/share/doc/lar/LICENSE"
-install -m 644 "$ROOT/docs/releases/0.8.0.md" "$STAGE/share/doc/lar/RELEASE-0.8.0.md"
+install -m 644 "$ROOT/docs/releases/${VERSION}.md" "$STAGE/share/doc/lar/RELEASE-${VERSION}.md"
 cat >"$STAGE/INSTALL.txt" <<EOF
 LAR ${VERSION} — native binary archive
 
