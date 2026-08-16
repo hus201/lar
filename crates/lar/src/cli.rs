@@ -240,7 +240,7 @@ pub enum RepoCmd {
         /// Source name or URI
         source: String,
     },
-    /// Write index.toml for a local repo directory (signed)
+    /// Write index.toml (and sign advisories.toml if present)
     Index {
         /// Directory containing .lar packages (and optional packages/)
         dir: PathBuf,

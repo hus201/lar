@@ -4,7 +4,7 @@ use std::io::{self, Write};
 use lar_package::inspect;
 use lar_store::{Store, StoredPackage};
 
-use crate::advisories::AdvisoriesFile;
+use crate::advisories::{verify_advisories, AdvisoriesFile};
 use crate::policy::LookupMode;
 use crate::sources::{load_sources, ordered_apps_sources, ordered_deps_sources, SourceEntry};
 use crate::transport::{fetch_blob, parse_uri, read_advisories, read_index};
@@ -91,7 +91,9 @@ fn fetch_from_source(
 ) -> Result<StoredPackage> {
     let base = parse_uri(&src.uri)?;
     let index = read_index(&base)?;
+    let trust = load_trust(store)?;
     let advisories = read_advisories(&base)?;
+    verify_advisories(&advisories, &trust)?;
     let pkg = index
         .find(id, version)
         .ok_or_else(|| Error::PackageNotFound {
@@ -216,6 +218,7 @@ pub fn collect_warnings_for_pin(
     content_hash: Option<&str>,
 ) -> Result<Vec<AdvisoryWarning>> {
     let sources = load_sources(store)?;
+    let trust = load_trust(store)?;
     let mut out = Vec::new();
     // main first among all sources for audit consistency
     let mut ordered = sources.sources.clone();
@@ -225,6 +228,7 @@ pub fn collect_warnings_for_pin(
             continue;
         };
         let advisories = read_advisories(&base)?;
+        verify_advisories(&advisories, &trust)?;
         for adv in advisories.matches(id, version, content_hash) {
             out.push(AdvisoryWarning {
                 source: src.name.clone(),

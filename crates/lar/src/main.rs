@@ -16,7 +16,8 @@ use lar_manager::{
 use lar_package::{init_package, inspect, pack, validate_package, InitOptions};
 use lar_repo::{
     add_source, audit, audit_should_fail, build_index, default_source_name, keygen, load_sources,
-    load_trust, remove_source, trust_add, trust_remove, write_index, AuditScope, SourcePolicy,
+    load_trust, remove_source, sign_advisories_in_dir, trust_add, trust_remove, write_index,
+    AuditScope, SourcePolicy,
 };
 use lar_resolver::{lockfile_path_for_manifest, resolve, write_lockfile};
 use lar_runtime::{
@@ -466,6 +467,11 @@ fn run_repo(system: bool, command: RepoCmd) -> Result<(), String> {
                 path.display(),
                 index.packages.len()
             );
+            if let Some(adv_path) =
+                sign_advisories_in_dir(&dir, &secret).map_err(|e| e.to_string())?
+            {
+                println!("wrote {} (signed)", adv_path.display());
+            }
             Ok(())
         }
         RepoCmd::Trust { command } => run_trust(system, command),

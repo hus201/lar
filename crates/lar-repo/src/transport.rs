@@ -46,7 +46,11 @@ pub fn read_index(base: &SourceBase) -> Result<PackageIndex> {
 
 pub fn read_advisories(base: &SourceBase) -> Result<AdvisoriesFile> {
     match read_text(base, "advisories.toml") {
-        Ok(text) => parse_advisories(&text),
+        Ok(text) => {
+            let file = parse_advisories(&text)?;
+            file.require_signature_fields()?;
+            Ok(file)
+        }
         Err(err) if is_missing_advisories(&err) => Ok(empty_advisories()),
         Err(err) => Err(err),
     }

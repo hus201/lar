@@ -1307,6 +1307,23 @@ url = "https://example.test/LAR-2026-0099"
 "#,
     )
     .unwrap();
+    let sign_adv = lar()
+        .args(["repo", "index"])
+        .arg(&repo)
+        .args(["--sign-key"])
+        .arg(keys.join("ed25519.sec"))
+        .output()
+        .unwrap();
+    assert!(
+        sign_adv.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&sign_adv.stderr)
+    );
+    let sign_out = String::from_utf8_lossy(&sign_adv.stdout);
+    assert!(
+        sign_out.contains("advisories.toml") && sign_out.contains("signed"),
+        "expected signed advisories, got {sign_out}"
+    );
 
     let add = lar_user(&prefix)
         .args(["repo", "add", "--main"])
@@ -1386,6 +1403,18 @@ summary = "Yanked after ship"
 "#,
     )
     .unwrap();
+    let resign = lar()
+        .args(["repo", "index"])
+        .arg(&repo)
+        .args(["--sign-key"])
+        .arg(keys.join("ed25519.sec"))
+        .output()
+        .unwrap();
+    assert!(
+        resign.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&resign.stderr)
+    );
 
     let audit = lar_user(&prefix)
         .args(["audit", "--store"])

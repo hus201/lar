@@ -1,6 +1,6 @@
 # Platform Boundary, Security, and Updates
 
-**Status:** Partial — content hashes, package signatures (repo fetch), advisories/`lar audit`, install records, and update/rollback are implemented; OS integration policy remains planned — [repos.md](../implementation/repos.md), [install.md](../implementation/install.md)
+**Status:** Partial — content hashes, package signatures (repo fetch), signed advisories/`lar audit`, install records, and update/rollback are implemented; OS integration policy remains planned — [repos.md](../implementation/repos.md), [install.md](../implementation/install.md)
 
 ## Operating System Boundary
 
@@ -27,7 +27,7 @@ LAR provides package integrity through:
 - Package signatures (Ed25519 over `content_hash` for repo fetch).
 - Content hashes.
 - Metadata verification.
-- Repo-published vulnerability advisories (warnings; refuse yank on new fetch).
+- Repo-published vulnerability advisories (Ed25519-signed; warnings; refuse yank on new fetch).
 
 LAR does not define a mandatory security isolation model.
 

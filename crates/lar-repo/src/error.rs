@@ -33,6 +33,9 @@ pub enum Error {
     #[error("invalid signature for {id} {version}")]
     BadSignature { id: String, version: String },
 
+    #[error("invalid advisories signature (key_id `{key_id}`)")]
+    BadAdvisoriesSignature { key_id: String },
+
     #[error("content hash mismatch for {id} {version}: index {index}, archive {archive}")]
     HashMismatch {
         id: String,

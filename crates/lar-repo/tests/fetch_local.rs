@@ -7,7 +7,8 @@ use std::thread;
 use lar_package::{init_package, pack, InitOptions};
 use lar_repo::{
     add_source, audit, audit_should_fail, build_index, fetch_into_store, keygen, list_dep_versions,
-    trust_add, write_index, AuditScope, LookupMode, SourcePolicy,
+    parse_advisories, sign_advisories, trust_add, write_advisories, write_index, AuditScope,
+    LookupMode, SourcePolicy,
 };
 use lar_store::{Paths, Store};
 use tempfile::tempdir;
@@ -31,6 +32,12 @@ fn pack_lib(dir: &Path, id: &str, version: &str, body: &[u8]) -> std::path::Path
 
 fn open_prefix(prefix: &Path) -> Store {
     Store::open(Paths::from_prefix(prefix.to_path_buf(), false))
+}
+
+fn write_signed_advisories(repo: &Path, secret: &str, body: &str) {
+    let file = parse_advisories(body).unwrap();
+    let signed = sign_advisories(file, secret).unwrap();
+    write_advisories(repo, &signed).unwrap();
 }
 
 #[test]
@@ -186,8 +193,9 @@ fn yanked_refuses_new_fetch() {
     fs::copy(&lar_path, repo.join("packages/org.example.lib-1.0.0.lar")).unwrap();
     let index = build_index(&repo, &secret).unwrap();
     write_index(&repo, &index).unwrap();
-    fs::write(
-        repo.join("advisories.toml"),
+    write_signed_advisories(
+        &repo,
+        &secret,
         r#"
 format = 1
 
@@ -199,8 +207,7 @@ severity = "critical"
 yanked = true
 summary = "Yanked pin"
 "#,
-    )
-    .unwrap();
+    );
 
     add_source(
         &store,
@@ -240,8 +247,9 @@ fn advisory_warns_on_fetch() {
     fs::copy(&lar_path, repo.join("packages/org.example.lib-1.0.0.lar")).unwrap();
     let index = build_index(&repo, &secret).unwrap();
     write_index(&repo, &index).unwrap();
-    fs::write(
-        repo.join("advisories.toml"),
+    write_signed_advisories(
+        &repo,
+        &secret,
         r#"
 format = 1
 
@@ -254,8 +262,7 @@ yanked = false
 summary = "Known issue"
 url = "https://example.test/LAR-2026-0002"
 "#,
-    )
-    .unwrap();
+    );
 
     add_source(
         &store,
@@ -281,7 +288,7 @@ url = "https://example.test/LAR-2026-0002"
 }
 
 #[test]
-fn invalid_advisories_fail_fetch() {
+fn unsigned_advisories_fail_fetch() {
     let tmp = tempdir().unwrap();
     let prefix = tmp.path().join("prefix");
     let store = open_prefix(&prefix);
@@ -305,8 +312,9 @@ format = 1
 [[advisories]]
 id = "LAR-2026-BAD"
 package_id = "org.example.lib"
+versions = ["1.0.0"]
 severity = "high"
-summary = "missing versions and hashes"
+summary = "unsigned"
 "#,
     )
     .unwrap();
@@ -330,7 +338,9 @@ summary = "missing versions and hashes"
     )
     .unwrap_err();
     assert!(
-        err.to_string().contains("advisory") || err.to_string().contains("advisories"),
+        err.to_string().contains("key_id")
+            || err.to_string().contains("signature")
+            || err.to_string().contains("advisories"),
         "{err}"
     );
 }
@@ -351,8 +361,9 @@ fn audit_fails_on_high_severity() {
     let repo = tmp.path().join("repo");
     fs::create_dir_all(&repo).unwrap();
     // advisories only — no packages needed for audit of store pins
-    fs::write(
-        repo.join("advisories.toml"),
+    write_signed_advisories(
+        &repo,
+        &secret,
         r#"
 format = 1
 
@@ -363,8 +374,7 @@ versions = ["1.0.0"]
 severity = "high"
 summary = "High severity"
 "#,
-    )
-    .unwrap();
+    );
     // minimal signed index so source is valid when present
     fs::copy(&lar_path, repo.join("org.example.lib-1.0.0.lar")).unwrap();
     let index = build_index(&repo, &secret).unwrap();
@@ -447,8 +457,9 @@ fn list_dep_versions_skips_yanked_index_pins() {
     fs::copy(&lar_new, repo.join("packages/org.example.lib-1.1.0.lar")).unwrap();
     let index = build_index(&repo, &secret).unwrap();
     write_index(&repo, &index).unwrap();
-    fs::write(
-        repo.join("advisories.toml"),
+    write_signed_advisories(
+        &repo,
+        &secret,
         r#"
 format = 1
 
@@ -460,8 +471,7 @@ severity = "high"
 yanked = true
 summary = "yanked"
 "#,
-    )
-    .unwrap();
+    );
 
     add_source(
         &store,

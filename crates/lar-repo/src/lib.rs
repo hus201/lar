@@ -11,7 +11,10 @@ mod transport;
 mod trust;
 mod versions;
 
-pub use advisories::{empty_advisories, parse_advisories, AdvisoriesFile, Advisory, Severity};
+pub use advisories::{
+    empty_advisories, parse_advisories, sign_advisories, sign_advisories_in_dir, verify_advisories,
+    write_advisories, AdvisoriesFile, Advisory, Severity,
+};
 pub use audit::{audit, audit_should_fail, AuditFinding, AuditScope};
 pub use error::Error;
 pub use fetch::{
@@ -26,8 +29,8 @@ pub use sources::{
 };
 pub use transport::{parse_uri, read_advisories, read_index, SourceBase};
 pub use trust::{
-    key_id_from_public, keygen, load_trust, save_trust, sign_content_hash, trust_add, trust_remove,
-    verify_content_hash, TrustFile, TrustedKey, TRUST_FORMAT,
+    key_id_from_public, keygen, load_trust, save_trust, sign_content_hash, sign_message, trust_add,
+    trust_remove, verify_content_hash, verify_message, TrustFile, TrustedKey, TRUST_FORMAT,
 };
 pub use versions::list_dep_versions;
 

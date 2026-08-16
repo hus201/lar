@@ -159,20 +159,30 @@ pub fn keygen() -> Result<(String, String, String)> {
 
 /// Sign a content_hash string with a secret key (`base64:…` of 32 seed bytes).
 pub fn sign_content_hash(secret_key: &str, content_hash: &str) -> Result<String> {
+    sign_message(secret_key, content_hash.as_bytes())
+}
+
+/// Verify signature over content_hash with a public key string.
+pub fn verify_content_hash(public_key: &str, content_hash: &str, signature: &str) -> Result<()> {
+    verify_message(public_key, content_hash.as_bytes(), signature)
+}
+
+/// Sign arbitrary message bytes (Ed25519); returns `base64:…` signature.
+pub fn sign_message(secret_key: &str, message: &[u8]) -> Result<String> {
     let signing = parse_secret_key(secret_key)?;
-    let sig = signing.sign(content_hash.as_bytes());
+    let sig = signing.sign(message);
     Ok(format!(
         "base64:{}",
         base64::engine::general_purpose::STANDARD.encode(sig.to_bytes())
     ))
 }
 
-/// Verify signature over content_hash with a public key string.
-pub fn verify_content_hash(public_key: &str, content_hash: &str, signature: &str) -> Result<()> {
+/// Verify an Ed25519 signature over message bytes.
+pub fn verify_message(public_key: &str, message: &[u8], signature: &str) -> Result<()> {
     let verifying = parse_public_key(public_key)?;
     let sig = parse_signature(signature)?;
     verifying
-        .verify(content_hash.as_bytes(), &sig)
+        .verify(message, &sig)
         .map_err(|_| Error::BadSignature {
             id: String::new(),
             version: String::new(),

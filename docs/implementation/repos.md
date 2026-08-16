@@ -2,7 +2,7 @@
 
 **Status:** Implemented (foundation)
 
-Configured package sources distribute `.lar` archives into the local SxS store. Fetch requires Ed25519 signatures over `content_hash` and a trusted publisher key. Repos may also publish vulnerability advisories; LAR **warns** (and refuses new fetch of **yanked** pins) but never auto-deletes store packages.
+Configured package sources distribute `.lar` archives into the local SxS store. Fetch requires Ed25519 signatures over `content_hash` and a trusted publisher key. Repos may also publish **signed** vulnerability advisories; LAR **warns** (and refuses new fetch of **yanked** pins) but never auto-deletes store packages.
 
 Design overview: [architecture.md](../design/architecture.md).
 
@@ -63,10 +63,12 @@ Repo fetch requires a trusted `key_id` and a valid signature, then verifies the 
 
 ## Advisories
 
-Advisories are not signed; integrity is trust-on-transport (same path as the index). Package authenticity remains Ed25519 over `content_hash`.
+Optional `advisories.toml`. Absent → empty (no warning). Present → must include `key_id` and `signature` (Ed25519 over the canonical `format` + `[[advisories]]` payload), verified against the same trust store as package signatures. `lar repo index --sign-key` signs the file when present.
 
 ```toml
 format = 1
+key_id = "ed25519:…"
+signature = "base64:…"
 
 [[advisories]]
 id = "LAR-2026-0001"
@@ -84,6 +86,7 @@ url = "https://…"
 | Fetch hits `yanked = true` | **Refuse** (error) |
 | Fetch/resolve/install hits non-yanked advisory | **Warn** on stderr; continue |
 | Package already in store and yanked | **Warn**; do not delete |
+| Present file missing/invalid signature or untrusted key | **Refuse** |
 | `lar audit` | Report; exit non-zero if any high/critical or yanked-in-use |
 
 LAR does not invent CVEs. No advisory from configured sources → no warning for that pin.
@@ -99,7 +102,7 @@ lar repo add [--policy deps|apps|both] [--main] [--name NAME] <path-or-url>
 # --main defaults policy to deps; otherwise default is both
 lar repo list
 lar repo remove <name-or-uri>
-lar repo index <dir> --sign-key <secret-or-file>
+lar repo index <dir> --sign-key <secret-or-file>   # also signs advisories.toml if present
 lar audit [--installed|--store]   # default: installed apps' pins
 ```
 
